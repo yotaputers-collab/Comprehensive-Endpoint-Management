@@ -215,8 +215,10 @@
 
   var ENDPOINTS = [
     ['GET', '/health', 'Liveness and database check'],
-    ['GET', '/agents', 'Agent inventory'],
-    ['POST', '/agents', 'Create an agent'],
+    ['POST', '/agents/enroll', 'Agent enrolment (X-Enroll-Token)'],
+    ['POST', '/agents/:id/heartbeat', 'Agent liveness (X-Agent-Token)'],
+    ['GET', '/agents', 'Enrolled hosts with online state'],
+    ['DELETE', '/agents/:id', 'Decommission a host (admin)'],
     ['GET', '/vulnerabilities', 'Paged vulnerability list'],
     ['POST', '/vulnerabilities/:id/patche', 'Mark a vulnerability patched'],
     ['GET', '/configuration', 'Effective runtime configuration'],
@@ -412,29 +414,40 @@
       (findingHtml ? '<div class="sev-list">' + findingHtml + '</div>' : notice('No findings recorded.'));
   }
 
+  function fmtSeen(value) {
+    if (!value) { return 'never'; }
+    var diff = Date.now() - new Date(value).getTime();
+    if (diff < 60000) { return Math.max(0, Math.round(diff / 1000)) + 's ago'; }
+    if (diff < 3600000) { return Math.round(diff / 60000) + 'm ago'; }
+    if (diff < 86400000) { return Math.round(diff / 3600000) + 'h ago'; }
+    return Math.round(diff / 86400000) + 'd ago';
+  }
+
   function renderAgents(payload) {
-    if (typeof payload === 'string') {
-      $('agent-count').textContent = 'placeholder';
-      $('agents').innerHTML = notice('Agent listing is still a stub in this build: "' + payload + '".');
-      return;
-    }
-
     if (!Array.isArray(payload) || !payload.length) {
-      $('agent-count').textContent = '0';
-      $('agents').innerHTML = notice('No agents registered.');
+      $('agent-count').textContent = '0 enrolled';
+      $('agents').innerHTML = notice('No hosts enrolled yet. An agent enrols by POSTing to /agents/enroll with the X-Enroll-Token header.');
       return;
     }
 
-    $('agent-count').textContent = payload.length + ' registered';
+    var online = payload.filter(function (a) { return a.status === 'online'; }).length;
+    $('agent-count').textContent = online + ' online / ' + payload.length + ' enrolled';
+
     var rows = payload.slice(0, 25).map(function (a) {
-      return '<tr><td>' + esc(a.name || a.id || '-') + '</td>' +
+      var meta = [a.osVersion, a.architecture].filter(Boolean).join(' · ');
+      return '<tr>' +
+        '<td>' + esc(a.name || a.id || '-') +
+        (meta ? '<br><small style="color:var(--muted)">' + esc(meta) + '</small>' : '') + '</td>' +
         '<td>' + esc(a.platform || '-') + '</td>' +
-        '<td><span class="tag ' + (a.status === 'active' ? 'yes' : '') + '">' +
-        esc(a.status || 'unknown') + '</span></td></tr>';
+        '<td class="mono">' + esc(a.ipAddress || '-') + '</td>' +
+        '<td><span class="tag ' + (a.status === 'online' ? 'yes' : '') + '">' +
+        esc(a.status || 'unknown') + '</span></td>' +
+        '<td>' + esc(fmtSeen(a.lastSeenAt)) + '</td>' +
+        '</tr>';
     }).join('');
 
-    $('agents').innerHTML = '<table><thead><tr><th>Name</th><th>Platform</th>' +
-      '<th>Status</th></tr></thead><tbody>' + rows + '</tbody></table>';
+    $('agents').innerHTML = '<table><thead><tr><th>Host</th><th>Platform</th><th>IP</th>' +
+      '<th>Status</th><th>Last seen</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
   function flatten(object, prefix, out) {

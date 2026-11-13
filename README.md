@@ -88,6 +88,8 @@ All settings are read from environment variables.
 | `BCRYPT_ROUNDS` | `10` | Reserved — passwords are hashed with scrypt |
 | `ADMIN_USERNAME` | `admin` | Username of the initial administrator |
 | `ADMIN_INITIAL_PASSWORD` | *(generated)* | Password for that first administrator; used only when the users table is empty |
+| `AGENT_ENROLL_TOKEN` | *(generated)* | Shared secret agents use to enrol; generated and logged per process if unset |
+| `AGENT_ONLINE_WINDOW_MS` | `120000` | Silence after which a host is reported offline |
 | `DLp_RETENTION_PERIOD` | `90` | DLP violation retention (days) |
 | `DLp_REAL_TIME_MONITORING` | `true` | Enable real-time DLP monitoring |
 | `VULNERABILITY_SCAN_INTERVAL` | `3600000` | Scan interval (ms) |
@@ -122,7 +124,9 @@ Base URL `http://localhost:3000`. `/` serves the browser console; every other pa
 | `DELETE` | `/auth/users/:id` | Deactivate an account (admin) |
 
 ```bash
-TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \n  -H 'content-type: application/json' \n  -d '{"username":"admin","password":"your-password"}' | jq -r .accessToken)
+TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \
+  -H 'content-type: application/json' \
+  -d '{"username":"admin","password":"your-password"}' | jq -r .accessToken)
 
 curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/agents
 ```
@@ -132,6 +136,41 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/agents
 **Sessions:** access tokens are short-lived (`JWT_EXPIRES_IN`) and are re-checked against the database on every request, so disabling an account or bumping its token version invalidates them immediately. Refresh tokens are stored only as SHA-256 hashes and rotate on every use; `/auth/login` returns both tokens. Five consecutive failed sign-ins lock an account for 15 minutes, and `/auth/*` is rate limited per IP (`RATE_LIMIT_AUTH_MAX`, 10/min). Demoting or deactivating an account revokes its live sessions at once.
 
 On first start, when the users table is empty, an administrator is created. Set `ADMIN_INITIAL_PASSWORD` to choose the password; otherwise one is generated and printed **once** in the logs (`docker compose logs app | grep administrator`).
+
+### Inventory — agents and endpoints
+
+Hosts appear by enrolling, not by being typed in. An agent posts once with the shared enrolment
+token and receives its own credential, then heartbeats with it:
+
+```bash
+# 1. Enrol (token comes from AGENT_ENROLL_TOKEN; generated and logged if unset)
+curl -s -X POST http://localhost:3000/agents/enroll \
+  -H 'content-type: application/json' \
+  -H "x-enroll-token: $AGENT_ENROLL_TOKEN" \
+  -d '{"hostname":"web-01","platform":"linux","osVersion":"Ubuntu 22.04","architecture":"x64","agentVersion":"1.0.0","ipAddress":"10.0.0.5"}'
+# -> { "endpointId": "...", "agentToken": "..." }
+
+# 2. Heartbeat every minute (401 means the token or endpoint is gone)
+curl -s -X POST http://localhost:3000/agents/$ENDPOINT_ID/heartbeat \
+  -H 'content-type: application/json' \
+  -H "x-agent-token: $AGENT_TOKEN" \
+  -d '{"ipAddress":"10.0.0.5","agentVersion":"1.0.0"}'
+```
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/agents/enroll` | Enrol a host — `X-Enroll-Token` header, no user session |
+| `POST` | `/agents/:id/heartbeat` | Liveness update — `X-Agent-Token` header, no user session |
+| `GET` | `/agents` | Active hosts, each with `status: online` or `offline` |
+| `GET` | `/agents/:id` | One host |
+| `POST` | `/agents` | Manual inventory entry (admin/operator) |
+| `POST` | `/agents/:id` | Rename or re-version a host (admin/operator) |
+| `DELETE` | `/agents/:id` | Decommission; its heartbeats stop being accepted (admin) |
+| `POST` | `/agents/:id/deploy`, `/agents/:id/collect-data` | Not implemented — returns `501` |
+
+A host is **online** while its last heartbeat is inside `AGENT_ONLINE_WINDOW_MS` (120 s by default),
+so the console reflects reality without a separate status column. Agent tokens are stored only as
+SHA-256 hashes and are dropped when the host is decommissioned.
 
 ### Health
 
@@ -225,9 +264,10 @@ src/
 - Accounts are deactivated, never deleted, so the users table keeps its audit trail.
 - Rate-limit counters are in memory and per process: running more than one replica means each keeps its own budget (use Redis or an ingress limiter to share it).
 - `GET /vulnerabilities/unpatched` and `/vulnerabilities/critical` are shadowed by the earlier `/:id` route; use the `unpatched` query parameter on `/vulnerabilities` instead.
-- Agent, DLP and parts of the compliance layer return stubbed data — the repositories exist but no controller or service drives them yet.
+- Nothing collects vulnerability data: no scanner and no CVE feed, so `/vulnerabilities` lists only what you POST. Agents report liveness and host facts, nothing more — `/agents/:id/deploy` and `/collect-data` answer `501`.
+- DLP and parts of the compliance layer still return stubbed data, and no `/dlp` routes exist.
 - The DLP tables are created but no `/dlp` routes are exposed.
-- The console at `/` is read-only: it displays data but cannot create or edit records.
+- The console at `/` is read-only: it shows inventory, vulnerabilities, compliance and configuration but cannot create or edit anything, and there is no per-host detail view.
 
 ## Troubleshooting
 
