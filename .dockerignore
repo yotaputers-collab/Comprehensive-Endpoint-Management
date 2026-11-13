@@ -1,0 +1,12 @@
+node_modules
+dist
+.git
+.gitignore
+.env
+*.log
+coverage
+docs
+src/tests
+upload
+upload_package.txt
+plan-demo.json

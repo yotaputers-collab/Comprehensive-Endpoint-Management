@@ -1,15 +1,10 @@
 import { Module } from '@nestjs/common';
-import { TypeOrmModule } from '@nestjs/typeorm';
-import { ComplianceStandard } from '../entities/compliance-standard.entity';
-import { ComplianceRequirement } from '../entities/compliance-requirement.entity';
-import { AuditLog } from '../entities/audit-log.entity';
-import { ComplianceStandardRepository } from '../repositories/compliance-standard.repository';
-import { ComplianceRequirementRepository } from '../repositories/compliance-requirement.repository';
-import { AuditLogRepository } from '../repositories/audit-log.repository';
+import { Iso27001Controller } from './compliance.controller';
+import { Iso27001Service } from './iso27001.service';
 
 @Module({
-  imports: [],
-  providers: [ComplianceStandardRepository, ComplianceRequirementRepository, AuditLogRepository],
-  exports: [ComplianceStandardRepository, ComplianceRequirementRepository, AuditLogRepository],
+  controllers: [Iso27001Controller],
+  providers: [Iso27001Service],
+  exports: [Iso27001Service],
 })
 export class ComplianceModule {}

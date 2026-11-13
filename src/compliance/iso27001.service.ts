@@ -1,14 +1,23 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { DataSource } from 'typeorm';
-import { ComplianceStandard } from '../entities/compliance-standard.entity';
-import { ComplianceRequirement } from '../entities/compliance-requirement.entity';
-import { AuditLog } from '../entities/audit-log.entity';
+import {
+  ComplianceFinding,
+  ComplianceReport,
+  ComplianceRequirement,
+  ComplianceStandard,
+} from './compliance.interface';
+
+interface RequirementCheckResult {
+  status: ComplianceRequirement['status'];
+  severity: ComplianceRequirement['severity'];
+  description: string;
+  evidence?: string;
+  lastVerified?: Date;
+  remediation?: string;
+}
 
 @Injectable()
 export class Iso27001Service {
-  private readonly logger: Logger = new Logger(Iso27001Service.name);
-
-  constructor(private dataSource: DataSource) {}
+  private readonly logger = new Logger(Iso27001Service.name);
 
   async assessCompliance(): Promise<ComplianceReport> {
     this.logger.log('Starting ISO 27001 compliance assessment');
@@ -31,50 +40,55 @@ export class Iso27001Service {
       findings: [],
     };
 
-    // Assess each standard
     for (const standard of standards) {
       const requirements = await this.getRequirements(standard.id);
       standard.requirements = requirements;
-      report.summary.totalRequirements += requirements.length;
 
       for (const requirement of requirements) {
-        const status = await this.checkRequirementStatus(requirement);
-        requirement.status = status.status;
-        
-        if (status.evidence) {
-          requirement.evidence = status.evidence;
+        const result = await this.checkRequirementStatus(requirement);
+        requirement.status = result.status;
+        if (result.evidence) {
+          requirement.evidence = result.evidence;
         }
-        if (status.lastVerified) {
-          requirement.lastVerified = status.lastVerified;
+        if (result.lastVerified) {
+          requirement.lastVerified = result.lastVerified;
         }
 
-        report.summary[`${status.status}s`] = (report.summary[`${status.status}s`] || 0) + 1;
+        report.summary.totalRequirements += 1;
+        if (result.status === 'compliant') {
+          report.summary.compliant += 1;
+        } else if (result.status === 'non-compliant') {
+          report.summary.nonCompliant += 1;
+        } else if (result.status === 'partial') {
+          report.summary.partial += 1;
+        } else {
+          report.summary.notApplicable += 1;
+        }
 
-        if (status.status !== 'compliant') {
-          report.findings.push({
+        if (result.status !== 'compliant') {
+          const finding: ComplianceFinding = {
             id: `finding-${requirement.id}`,
             requirementId: requirement.id,
-            severity: status.severity,
-            description: status.description,
-            remediation: status.remediation,
-            status: status.status,
-          });
+            severity: result.severity,
+            description: result.description,
+            remediation: result.remediation,
+            status: result.status === 'partial' ? 'in-progress' : 'open',
+          };
+          report.findings.push(finding);
         }
       }
     }
 
-    // Calculate compliance percentage
-    const compliantCount = report.summary.compliant || 0;
-    report.summary.compliancePercentage = compliantCount > 0 
-      ? Math.round((compliantCount / report.summary.totalRequirements) * 100) 
-      : 0;
+    report.summary.compliancePercentage =
+      report.summary.totalRequirements > 0
+        ? Math.round((report.summary.compliant / report.summary.totalRequirements) * 100)
+        : 0;
 
     this.logger.log('ISO 27001 compliance assessment complete');
     return report;
   }
 
   private async getAllStandards(): Promise<ComplianceStandard[]> {
-    // In production: query from database
     return [
       {
         id: 'iso27001-1',
@@ -98,7 +112,7 @@ export class Iso27001Service {
   }
 
   private async getRequirements(standardId: string): Promise<ComplianceRequirement[]> {
-    // In production: query from database by standardId
+    void standardId;
     return [
       {
         id: 'req-1',
@@ -119,8 +133,9 @@ export class Iso27001Service {
     ];
   }
 
-  private async checkRequirementStatus(requirement: ComplianceRequirement): { status: string; severity: string; description: string; evidence?: string; lastVerified?: Date; remediation?: string } {
-    // In production: perform actual compliance check
+  private async checkRequirementStatus(
+    requirement: ComplianceRequirement,
+  ): Promise<RequirementCheckResult> {
     return {
       status: requirement.status || 'non-compliant',
       severity: requirement.severity || 'medium',

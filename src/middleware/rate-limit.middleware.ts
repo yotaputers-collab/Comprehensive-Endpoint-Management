@@ -23,7 +23,7 @@ export class RateLimitMiddleware implements NestMiddleware {
     
     // Clean up old entries
     Object.keys(req.session.rateLimit).forEach(key => {
-      if (now - key > windowMs * 2) {
+      if (now - Number(key) > windowMs * 2) {
         delete req.session.rateLimit[key];
       }
     });

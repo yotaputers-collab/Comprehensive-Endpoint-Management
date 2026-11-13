@@ -1,6 +1,6 @@
 import { Controller, Get, Post, Body } from '@nestjs/common';
 import { Iso27001Service } from './iso27001.service';
-import { ComplianceReport } from '../interfaces/compliance.interface';
+import { ComplianceReport } from './compliance.interface';
 
 @Controller('compliance')
 export class Iso27001Controller {
@@ -58,7 +58,7 @@ export class Iso27001Controller {
           severity: 'medium',
           description: 'Organization of information security not fully implemented',
           remediation: 'Implement organization-wide security policies',
-          status: 'non-compliant',
+          status: 'open',
         },
       ],
     };

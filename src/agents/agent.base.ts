@@ -1,3 +1,5 @@
+import { Vulnerability } from '../entities/vulnerability.entity';
+
 export interface AgentCapabilities {
   vulnerabilityScan: boolean;
   remediation: boolean;
@@ -26,7 +28,7 @@ export interface AgentStatus {
 export interface ScanResults {
   endpointId: string;
   timestamp: Date;
-  vulnerabilities: Vulnerability[];
+  vulnerabilities: Partial<Vulnerability>[];
   systemInfo: SystemInfo;
 }
 
@@ -54,4 +56,14 @@ export interface MemoryInfo {
   total: number;
   used: number;
   free: number;
+}
+
+export abstract class AgentBase {
+  constructor(public readonly agentId: string) {}
+
+  abstract scanSystem(): Promise<ScanResults>;
+
+  abstract getStatus(): Promise<AgentStatus>;
+
+  abstract collectLogs(filters?: Record<string, unknown>): Promise<unknown[]>;
 }

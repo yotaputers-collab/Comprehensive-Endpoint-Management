@@ -1,72 +1,86 @@
-import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
-import { DlpPolicy, DlpRule, DlpViolation } from '../entities';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { DlpPolicy } from '../entities/dl-policy.entity';
+import { DlpRule } from '../entities/dl-rule.entity';
+import { DlpViolation } from '../entities/dl-violation.entity';
 
-@EntityRepository(DlpPolicy)
-export class DlpPolicyRepository extends Repository<DlpPolicy> {
-  async findActive(): Promise<DlpPolicy[]> {
-    return this.find({ where: { enabled: true } });
+@Injectable()
+export class DlpPolicyRepository {
+  constructor(
+    @InjectRepository(DlpPolicy) private readonly repository: Repository<DlpPolicy>,
+  ) {}
+
+  findActive(): Promise<DlpPolicy[]> {
+    return this.repository.find({ where: { enabled: true } });
   }
 
-  async findById(id: string): Promise<DlpPolicy | null> {
-    return this.findOneBy({ id });
+  findById(id: string): Promise<DlpPolicy | null> {
+    return this.repository.findOneBy({ id });
   }
 
-  async createPolicy(policy: Partial<DlpPolicy>): Promise<DlpPolicy> {
-    const newPolicy = this.create(policy);
-    return this.save(newPolicy);
+  createPolicy(policy: Partial<DlpPolicy>): Promise<DlpPolicy> {
+    return this.repository.save(this.repository.create(policy));
   }
 
   async updatePolicy(id: string, updates: Partial<DlpPolicy>): Promise<DlpPolicy | null> {
-    await this.update(id, updates);
-    return this.findOneBy({ id });
+    await this.repository.update(id, updates);
+    return this.repository.findOneBy({ id });
   }
 
   async deletePolicy(id: string): Promise<boolean> {
-    const result = await this.delete(id);
-    return result.affected > 0;
+    const result = await this.repository.delete(id);
+    return (result.affected ?? 0) > 0;
   }
 }
 
-@EntityRepository(DlpRule)
-export class DlpRuleRepository extends Repository<DlpRule> {
-  async findByPolicy(policyId: string): Promise<DlpRule[]> {
-    return this.find({ where: { policy: { id: policyId } } });
+@Injectable()
+export class DlpRuleRepository {
+  constructor(
+    @InjectRepository(DlpRule) private readonly repository: Repository<DlpRule>,
+  ) {}
+
+  findByPolicy(policyId: string): Promise<DlpRule[]> {
+    return this.repository.find({ where: { policyId } });
   }
 
-  async createRule(rule: Partial<DlpRule>): Promise<DlpRule> {
-    const newRule = this.create(rule);
-    return this.save(newRule);
+  createRule(rule: Partial<DlpRule>): Promise<DlpRule> {
+    return this.repository.save(this.repository.create(rule));
   }
 
   async updateRule(id: string, updates: Partial<DlpRule>): Promise<DlpRule | null> {
-    await this.update(id, updates);
-    return this.findOneBy({ id });
+    await this.repository.update(id, updates);
+    return this.repository.findOneBy({ id });
   }
 
   async deleteRule(id: string): Promise<boolean> {
-    const result = await this.delete(id);
-    return result.affected > 0;
+    const result = await this.repository.delete(id);
+    return (result.affected ?? 0) > 0;
   }
 }
 
-@EntityRepository(DlpViolation)
-export class DlpViolationRepository extends Repository<DlpViolation> {
-  async createViolation(violation: Partial<DlpViolation>): Promise<DlpViolation> {
-    const newViolation = this.create(violation);
-    return this.save(newViolation);
+@Injectable()
+export class DlpViolationRepository {
+  constructor(
+    @InjectRepository(DlpViolation) private readonly repository: Repository<DlpViolation>,
+  ) {}
+
+  createViolation(violation: Partial<DlpViolation>): Promise<DlpViolation> {
+    return this.repository.save(this.repository.create(violation));
   }
 
-  async findByPolicy(policyId: string): Promise<DlpViolation[]> {
-    return this.find({ where: { policyId } });
+  findByPolicy(policyId: string): Promise<DlpViolation[]> {
+    return this.repository.find({ where: { policyId } });
   }
 
-  async findByEndpoint(endpointId: string): Promise<DlpViolation[]> {
-    return this.find({ where: { endpointId } });
+  findByEndpoint(endpointId: string): Promise<DlpViolation[]> {
+    return this.repository.find({ where: { endpointId } });
   }
 
-  async findRecentViolations(hours: number): Promise<DlpViolation[]> {
-    // In production: query with time filter
-    return this.find();
+  findRecentViolations(hours: number): Promise<DlpViolation[]> {
+    return this.repository
+      .createQueryBuilder('violation')
+      .where("violation.timestamp >= NOW() - (:hours || ' hours')::interval", { hours })
+      .getMany();
   }
 }

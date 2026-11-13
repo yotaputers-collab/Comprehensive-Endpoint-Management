@@ -1,32 +1,39 @@
-import { EntityRepository, Repository } from '@nestjs/typeorm';
+import { Injectable } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, Repository } from 'typeorm';
 import { Endpoint } from '../entities/endpoint.entity';
 
-@EntityRepository(Endpoint)
-export class EndpointRepository extends Repository<Endpoint> {
-  async findActive(): Promise<Endpoint[]> {
-    return this.find({ where: { active: true } });
+@Injectable()
+export class EndpointRepository {
+  constructor(
+    @InjectRepository(Endpoint) private readonly repository: Repository<Endpoint>,
+  ) {}
+
+  findActive(): Promise<Endpoint[]> {
+    return this.repository.find({ where: { active: true } });
   }
 
-  async findByPlatform(platform: 'windows' | 'linux'): Promise<Endpoint[]> {
-    return this.find({ where: { platform } });
+  findByPlatform(platform: Endpoint['platform']): Promise<Endpoint[]> {
+    return this.repository.find({ where: { platform } });
   }
 
-  async findCriticalVulnerabilities(): Promise<Endpoint[]> {
-    return this.find({ 
-      where: { 
-        criticalVulnerabilities: { $gt: 0 },
-        active: true 
-      } 
-    });
+  findCriticalVulnerabilities(): Promise<Endpoint[]> {
+    return this.repository
+      .createQueryBuilder('endpoint')
+      .where('endpoint.criticalVulnerabilities > 0')
+      .andWhere('endpoint.active = true')
+      .getMany();
   }
 
-  async findByIds(ids: string[]): Promise<Endpoint[]> {
-    if (ids.length === 0) return [];
-    return this.find({ where: { id: In(ids) } });
+  findByIds(ids: string[]): Promise<Endpoint[]> {
+    if (ids.length === 0) {
+      return Promise.resolve([]);
+    }
+    return this.repository.find({ where: { id: In(ids) } });
   }
 
-  async updateStatus(id: string, status: boolean): Promise<Endpoint> {
-    await this.update(id, { active: status });
-    return this.findOne(id);
+  async updateStatus(id: string, status: boolean): Promise<Endpoint | null> {
+    await this.repository.update(id, { active: status });
+    return this.repository.findOneBy({ id });
   }
 }

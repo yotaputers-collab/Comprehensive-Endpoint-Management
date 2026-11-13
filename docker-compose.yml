@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   # PostgreSQL Database
   postgres:
@@ -29,15 +27,18 @@ services:
       postgres:
         condition: service_healthy
     environment:
+      APP_HOST: 0.0.0.0
+      APP_PORT: 3000
       DB_HOST: postgres
       DB_PORT: 5432
       DB_USERNAME: postgres
       DB_PASSWORD: ${DB_PASSWORD:-postgres}
       DB_DATABASE: endpoint_management
-      APP_PORT: 3000
+      DB_SYNCHRONIZE: "true"
+      DB_LOGGING: "false"
       JWT_SECRET: ${JWT_SECRET:-change-this-secret}
       JWT_EXPIRES_IN: 1h
-      BCrypt_ROUNDS: 10
+      BCRYPT_ROUNDS: 10
       DLp_RETENTION_PERIOD: 90
       DLp_REAL_TIME_MONITORING: true
       VULNERABILITY_SCAN_INTERVAL: 3600000
@@ -47,8 +48,6 @@ services:
     ports:
       - "3000:3000"
       - "3001:3001"
-    volumes:
-      - ./.env:/app/.env:ro
 
   # Redis (optional, for caching and rate limiting)
   redis:

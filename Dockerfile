@@ -1,21 +1,15 @@
 FROM node:20-alpine AS base
-
-# Set working directory
 WORKDIR /app
 
 # Install dependencies only when needed
 FROM base AS dependencies
-COPY package*.json ./
-RUN npm ci --silent
-
-# Install TypeScript and ts-node for development
-RUN npm install -g typescript ts-node
+COPY package.json package-lock.json ./
+RUN npm ci
 
 # Rebuild the source code only when needed
 FROM base AS builder
 COPY --from=dependencies /app/node_modules ./node_modules
-COPY tsconfig.json .
-COPY nest-cli.json .
+COPY tsconfig.json nest-cli.json ./
 COPY src ./src
 RUN npm run build
 
@@ -27,8 +21,11 @@ WORKDIR /app
 # Add a non-root user for security
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
+# Production dependencies only
+COPY package.json package-lock.json ./
+RUN npm ci --omit=dev && npm cache clean --force
+
 COPY --from=builder /app/dist ./dist
-COPY package*.json ./
 
 # Run the application as non-root user
 USER appuser

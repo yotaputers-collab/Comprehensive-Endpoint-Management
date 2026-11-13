@@ -1,3 +1,5 @@
+import { AgentCapabilities, AgentConfiguration } from './agent.base';
+
 export interface AgentInterface {
   id: string;
   name: string;

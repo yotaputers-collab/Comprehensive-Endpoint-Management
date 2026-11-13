@@ -1,25 +1,33 @@
-import { Gateway, WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
+import { Logger, OnModuleInit } from '@nestjs/common';
+import { WebSocketGateway, WebSocketServer } from '@nestjs/websockets';
 import { Server } from 'socket.io';
-import { SecurityEvent } from '../interfaces/soc.interface';
+import { SecurityEvent } from './soc.interface';
 
-@Gateway()
-@WebSocketGateway(3001, { cors: { origin: '*' } })
-export class SocGateway {
+@WebSocketGateway({ port: 3001, cors: { origin: '*' } })
+export class SocGateway implements OnModuleInit {
+  private readonly logger = new Logger(SocGateway.name);
+
   @WebSocketServer()
   server: Server;
 
-  handleSecurityEvent(event: SecurityEvent) {
+  onModuleInit(): void {
+    this.logger.log('SOC WebSocket gateway initialised on port 3001');
+  }
+
+  handleSecurityEvent(event: SecurityEvent): void {
+    if (!this.server) {
+      this.logger.warn('SOC gateway not ready, dropping security event');
+      return;
+    }
     this.server.emit('security-event', event);
     this.logger.log(`Security event emitted: ${event.type}`);
   }
 
-  getActiveIncidents(): any[] {
-    // In production: query active incidents from database
+  getActiveIncidents(): unknown[] {
     return [];
   }
 
-  getIncidentHistory(hours: number): any[] {
-    // In production: query incident history
+  getIncidentHistory(): unknown[] {
     return [];
   }
 }

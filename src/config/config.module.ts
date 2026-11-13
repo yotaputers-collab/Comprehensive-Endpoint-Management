@@ -1,13 +1,13 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
-import * as appConfig from './app.config';
+import appConfig from './app.config';
+import { ConfigurationController } from './settings.controller';
+import { ConfigurationService } from './configuration.service';
 
 @Module({
-  imports: [
-    NestConfigModule.forRoot({
-      load: [appConfig.default],
-    }),
-  ],
-  exports: [NestConfigModule],
+  imports: [NestConfigModule.forRoot({ isGlobal: true, load: [appConfig] })],
+  controllers: [ConfigurationController],
+  providers: [ConfigurationService],
+  exports: [ConfigurationService, NestConfigModule],
 })
 export class ConfigModule {}

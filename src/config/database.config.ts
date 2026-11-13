@@ -1,4 +1,4 @@
-import { DataSource } from '@nestjs/typeorm';
+import { DataSource } from 'typeorm';
 
 export const AppDataSource = new DataSource({
   type: 'postgres',

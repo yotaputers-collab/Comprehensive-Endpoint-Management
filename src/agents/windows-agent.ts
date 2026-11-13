@@ -1,14 +1,15 @@
-import { AgentBase } from './agent.base';
-import { ScanResults } from '../interfaces/agent.interfaces';
+import { AgentBase, AgentStatus, ScanResults, SystemInfo } from './agent.base';
+import { Vulnerability } from '../entities/vulnerability.entity';
 
 export class WindowsAgent extends AgentBase {
+  constructor(agentId = 'local-windows-agent') {
+    super(agentId);
+  }
+
   async scanSystem(): Promise<ScanResults> {
-    // Collect system information
     const systemInfo = await this.collectSystemInfo();
-    
-    // Perform vulnerability assessment
     const vulnerabilities = await this.assessVulnerabilities();
-    
+
     return {
       endpointId: this.agentId,
       timestamp: new Date(),
@@ -18,38 +19,33 @@ export class WindowsAgent extends AgentBase {
   }
 
   private async collectSystemInfo(): Promise<SystemInfo> {
-    // In production: use WMI, system APIs, etc.
     return {
       osVersion: 'Windows 10/11',
       installedSoftware: [],
       networkInterfaces: [],
       cpuInfo: { model: 'Intel/AMD', cores: 4, architecture: 'x64' },
-      memoryInfo: { total: 16 * 1024 * 1024 * 1024, used: 8 * 1024 * 1024 * 1024, free: 8 * 1024 * 1024 * 1024 },
+      memoryInfo: {
+        total: 16 * 1024 * 1024 * 1024,
+        used: 8 * 1024 * 1024 * 1024,
+        free: 8 * 1024 * 1024 * 1024,
+      },
     };
   }
 
-  private async assessVulnerabilities(): Promise<Vulnerability[]> {
-    // In production: query system for:
-    // - Missing security updates
-    // - Installed software versions
-    - Known vulnerabilities
-    // - Configuration issues
-    
-    // Return structured vulnerability data
+  private async assessVulnerabilities(): Promise<Partial<Vulnerability>[]> {
     return [
       {
         name: 'Example Vulnerability',
         cveId: 'CVE-2024-XXXXX',
-        severity: 'high' as const,
-        type: 'os' as const,
+        severity: 'high',
+        type: 'os',
         isPatched: false,
         detectedAt: new Date(),
       },
     ];
   }
 
-  async collectLogs(filters?: any): Promise<any[]> {
-    // Collect system logs
+  async collectLogs(): Promise<unknown[]> {
     return [];
   }
 
