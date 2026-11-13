@@ -220,7 +220,12 @@
       </article>
     </section>
 
-    <section class="panel api">
+    <article class="panel">
+        <header><h2>Scan scheduler</h2><span class="count" id="scan-scheduler-config">—</span></header>
+        <div class="body" id="scan-scheduler-body">
+          <div class="meta-grid"><!-- populated by JS --></div>
+        </div>
+      </article><section class="panel api">
       <header><h2>API endpoints</h2><span class="count">this service</span></header>
       <ul id="api-list"></ul>
     </section>
@@ -800,7 +805,45 @@
 
   if (token()) { load(); } else { showLogin(); }
 
-  setInterval(function () {
+  
+  // Load scan scheduler status
+  function loadSchedulerStatus() {
+    return get('/scan/status').then(function (status) {
+      var config = status.json;
+      var body = $('scan-scheduler-body');
+      if (!body) { return; }
+
+      var enabled = config.enabled !== false;
+      var pills = [];
+      if (enabled) {
+        pills.push('<span class="pill ok">enabled</span>');
+      } else {
+        pills.push('<span class="pill idle">disabled</span>');
+      }
+      pills.push('<span class="pill">interval: ' + (config.intervalMinutes ?? 1440) + ' min</span>');
+      pills.push('<span class="pill">stale after: ' + (config.staleAfterMinutes ?? config.intervalMinutes ?? 1440) + ' min</span>');
+      pills.push('<span class="pill">concurrency: ' + (config.concurrency ?? 2) + '</span>');
+      pills.push('<span class="pill">max hosts/run: ' + (config.maxHostsPerRun ?? 50) + '</span>');
+      pills.push('<span class="pill ' + (config.running ? 'warn' : 'idle') + '">' + (config.running ? 'running' : 'idle') + '</span>');
+      if (config.lastRun) {
+        var started = new Date(config.lastRun.startedAt).toLocaleTimeString();
+        pills.push('<span class="pill">last run: ' + started + '</span>');
+        if (config.lastRun.finishedAt) {
+          var finished = new Date(config.lastRun.finishedAt).toLocaleTimeString();
+          pills.push('<span class="pill">finished: ' + finished + '</span>');
+        }
+        pills.push('<span class="pill">hosts: ' + (config.lastRun.hosts || 0) + ', findings: ' + (config.lastRun.findings || 0) + '</span>');
+      } else {
+        pills.push('<span class="pill">no run yet</span>');
+      }
+      body.innerHTML = '<div class="meta-grid">' + pills.join('') + '</div>';
+    }).catch(function (err) {
+      $('scan-scheduler-body').innerHTML = notice("Could not load scheduler status: " + err.message, true);
+    });
+  }
+
+  // Run once on startup and then via the existing 15s interval
+  loadSchedulerStatus();setInterval(function () {
     if (!document.hidden && token()) { load(); }
   }, 15000);
 })();
