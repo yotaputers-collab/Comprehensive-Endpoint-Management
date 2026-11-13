@@ -83,6 +83,8 @@ All settings are read from environment variables.
 | `JWT_SECRET` | `change-this-secret` | Token signing key — **change in production** |
 | `JWT_EXPIRES_IN` | `15m` | Access token lifetime |
 | `JWT_REFRESH_TTL_DAYS` | `7` | Refresh token lifetime, in days |
+| `RATE_LIMIT_MAX` | `300` | Requests per minute per IP on general routes |
+| `RATE_LIMIT_AUTH_MAX` | `10` | Requests per minute per IP on `/auth/*` |
 | `BCRYPT_ROUNDS` | `10` | Reserved — passwords are hashed with scrypt |
 | `ADMIN_USERNAME` | `admin` | Username of the initial administrator |
 | `ADMIN_INITIAL_PASSWORD` | *(generated)* | Password for that first administrator; used only when the users table is empty |
@@ -116,6 +118,8 @@ Base URL `http://localhost:3000`. `/` serves the browser console; every other pa
 | `POST` | `/auth/password` | Change your own password — `{ "currentPassword", "newPassword" }` |
 | `GET` | `/auth/users` | List accounts (admin) |
 | `POST` | `/auth/users` | Create an account — `{ "username", "password", "role" }` (admin) |
+| `PATCH` | `/auth/users/:id` | Change a role or the active flag — `{ "role", "active" }` (admin) |
+| `DELETE` | `/auth/users/:id` | Deactivate an account (admin) |
 
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \n  -H 'content-type: application/json' \n  -d '{"username":"admin","password":"your-password"}' | jq -r .accessToken)
@@ -125,7 +129,7 @@ curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/agents
 
 **Roles:** `viewer` is read-only, `operator` may also record vulnerabilities and drive agent actions, `admin` may change configuration and manage accounts (and always passes every check).
 
-**Sessions:** access tokens are short-lived (`JWT_EXPIRES_IN`) and are re-checked against the database on every request, so disabling an account or bumping its token version invalidates them immediately. Refresh tokens are stored only as SHA-256 hashes and rotate on every use; `/auth/login` returns both tokens.
+**Sessions:** access tokens are short-lived (`JWT_EXPIRES_IN`) and are re-checked against the database on every request, so disabling an account or bumping its token version invalidates them immediately. Refresh tokens are stored only as SHA-256 hashes and rotate on every use; `/auth/login` returns both tokens. Five consecutive failed sign-ins lock an account for 15 minutes, and `/auth/*` is rate limited per IP (`RATE_LIMIT_AUTH_MAX`, 10/min). Demoting or deactivating an account revokes its live sessions at once.
 
 On first start, when the users table is empty, an administrator is created. Set `ADMIN_INITIAL_PASSWORD` to choose the password; otherwise one is generated and printed **once** in the logs (`docker compose logs app | grep administrator`).
 
@@ -218,9 +222,8 @@ src/
 
 ## Known gaps
 
-- Role checks are enforced, but there is no endpoint to change a role, deactivate an account or delete a user — roles are fixed when an account is created.
-- The rate-limiting middleware exists but is not registered, so `/auth/login` is not throttled against brute force.
-- `POST /vulnerabilities` returns 500: the `Vulnerability` entity requires `endpointId`, while `CreateVulnerabilityDto` has no field for it, so the insert fails its not-null constraint.
+- Accounts are deactivated, never deleted, so the users table keeps its audit trail.
+- Rate-limit counters are in memory and per process: running more than one replica means each keeps its own budget (use Redis or an ingress limiter to share it).
 - `GET /vulnerabilities/unpatched` and `/vulnerabilities/critical` are shadowed by the earlier `/:id` route; use the `unpatched` query parameter on `/vulnerabilities` instead.
 - Agent, DLP and parts of the compliance layer return stubbed data — the repositories exist but no controller or service drives them yet.
 - The DLP tables are created but no `/dlp` routes are exposed.

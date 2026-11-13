@@ -1,4 +1,4 @@
-import { Module } from '@nestjs/common';
+import { MiddlewareConsumer, Module, NestModule, RequestMethod } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AgentModule } from './modules/agent/agent.module';
@@ -17,6 +17,7 @@ import { DlpRule } from './entities/dl-rule.entity';
 import { DlpViolation } from './entities/dl-violation.entity';
 import { User } from './entities/user.entity';
 import { RefreshToken } from './entities/refresh-token.entity';
+import { RateLimitMiddleware } from './middleware/rate-limit.middleware';
 
 function buildDatabaseOptions(config: ConfigService): TypeOrmModuleOptions {
   return {
@@ -52,4 +53,8 @@ function buildDatabaseOptions(config: ConfigService): TypeOrmModuleOptions {
   ],
   controllers: [HealthController],
 })
-export class AppModule {}
+export class AppModule implements NestModule {
+  configure(consumer: MiddlewareConsumer): void {
+    consumer.apply(RateLimitMiddleware).forRoutes({ path: '*', method: RequestMethod.ALL });
+  }
+}

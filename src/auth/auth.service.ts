@@ -1,8 +1,16 @@
-import { ConflictException, Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  BadRequestException,
+  ConflictException,
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes } from 'crypto';
-import { IsNull, Repository } from 'typeorm';
+import { IsNull, Not, Repository } from 'typeorm';
 import { RefreshToken } from '../entities/refresh-token.entity';
 import { User, UserRole } from '../entities/user.entity';
 import { PasswordService } from './password.service';
@@ -61,16 +69,31 @@ export class AuthService {
     };
   }
 
-  async validateUser(username: string, password: string): Promise<User | null> {
-    const user = await this.users.findOne({ where: { username } });
-    if (!user || !user.active) {
-      return null;
+  private static readonly MAX_FAILED_ATTEMPTS = 5;
+  private static readonly LOCKOUT_MS = 15 * 60 * 1000;
+
+  /** Refuses sign-in while an account is locked after repeated failures. */
+  private ensureNotLocked(user: User): void {
+    if (!user.lockedUntil || user.lockedUntil.getTime() <= Date.now()) {
+      return;
     }
-    if (!(await this.passwords.verify(password, user.passwordHash))) {
-      return null;
+    const minutes = Math.ceil((user.lockedUntil.getTime() - Date.now()) / 60_000);
+    throw new HttpException(
+      `Too many failed sign-ins. This account is locked for another ${minutes} minute(s).`,
+      HttpStatus.TOO_MANY_REQUESTS,
+    );
+  }
+
+  private async registerFailure(user: User): Promise<void> {
+    const attempts = (user.failedLoginAttempts ?? 0) + 1;
+    if (attempts >= AuthService.MAX_FAILED_ATTEMPTS) {
+      await this.users.update(user.id, {
+        failedLoginAttempts: 0,
+        lockedUntil: new Date(Date.now() + AuthService.LOCKOUT_MS),
+      });
+      return;
     }
-    await this.users.update(user.id, { lastLoginAt: new Date() });
-    return user;
+    await this.users.update(user.id, { failedLoginAttempts: attempts });
   }
 
   private async issueTokens(user: User): Promise<TokenPair> {
@@ -102,11 +125,28 @@ export class AuthService {
   }
 
   async login(username: string, password: string): Promise<TokenPair> {
-    const user = await this.validateUser(username, password);
-    if (!user) {
+    const user = await this.users.findOne({ where: { username } });
+    if (user) {
+      this.ensureNotLocked(user);
+    }
+
+    const valid =
+      Boolean(user && user.active) &&
+      (await this.passwords.verify(password, user!.passwordHash));
+
+    if (!valid) {
+      if (user) {
+        await this.registerFailure(user);
+      }
       throw new UnauthorizedException('Invalid username or password');
     }
-    return this.issueTokens(user);
+
+    await this.users.update(user!.id, {
+      lastLoginAt: new Date(),
+      failedLoginAttempts: 0,
+      lockedUntil: null,
+    });
+    return this.issueTokens(user!);
   }
 
   /** Rotates a refresh token: the presented one is revoked and a new pair issued. */
@@ -186,6 +226,63 @@ export class AuthService {
       }),
     );
     return this.toPublic(created);
+  }
+
+  /** Admin edit of role or active flag. Sessions are revoked when access drops. */
+  async updateUser(
+    actorId: string,
+    id: string,
+    changes: { role?: UserRole; active?: boolean },
+  ): Promise<PublicUser> {
+    if (actorId === id && (changes.active === false || (changes.role && changes.role !== 'admin'))) {
+      throw new BadRequestException('You cannot demote or deactivate your own account');
+    }
+
+    const user = await this.users.findOne({ where: { id } });
+    if (!user) {
+      throw new NotFoundException('No such user');
+    }
+
+    const patch: Partial<User> = {};
+    if (changes.role) {
+      patch.role = changes.role;
+    }
+    if (typeof changes.active === 'boolean') {
+      patch.active = changes.active;
+    }
+    if (Object.keys(patch).length === 0) {
+      throw new BadRequestException('Provide a role or an active flag');
+    }
+
+    const losesAccess =
+      patch.active === false || (patch.role !== undefined && patch.role !== user.role);
+
+    if (losesAccess && user.role === 'admin') {
+      const remainingAdmins = await this.users.count({
+        where: { role: 'admin', active: true, id: Not(id) },
+      });
+      if (remainingAdmins === 0) {
+        throw new BadRequestException('At least one active administrator must remain');
+      }
+    }
+
+    if (losesAccess) {
+      patch.tokenVersion = user.tokenVersion + 1;
+    }
+
+    await this.users.update(id, patch);
+    if (losesAccess) {
+      await this.refreshTokens.update(
+        { userId: id, revokedAt: IsNull() },
+        { revokedAt: new Date() },
+      );
+    }
+
+    return this.toPublic({ ...user, ...patch });
+  }
+
+  deactivateUser(actorId: string, id: string): Promise<PublicUser> {
+    return this.updateUser(actorId, id, { active: false });
   }
 
   async listUsers(): Promise<PublicUser[]> {

@@ -26,6 +26,13 @@ export class User {
   @Column({ type: 'timestamp', nullable: true })
   lastLoginAt?: Date;
 
+  @Column({ type: 'int', default: 0 })
+  failedLoginAttempts: number;
+
+  /** Set after repeated failures; login is refused until it passes. */
+  @Column({ type: 'timestamp', nullable: true })
+  lockedUntil?: Date | null;
+
   @CreateDateColumn()
   createdAt: Date;
 

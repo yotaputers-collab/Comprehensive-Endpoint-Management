@@ -1,9 +1,10 @@
-import { Body, Controller, Get, HttpCode, Post, Req } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, Patch, Post, Req } from '@nestjs/common';
 import { AuthService, JwtPayload } from './auth.service';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateUserDto } from './dto/create-user.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
+import { UpdateUserDto } from './dto/update-user.dto';
 import { Public } from './public.decorator';
 import { Roles } from './roles.decorator';
 
@@ -68,5 +69,19 @@ export class AuthController {
   @Post('users')
   createUser(@Body() dto: CreateUserDto) {
     return this.authService.createUser(dto.username, dto.password, dto.role);
+  }
+
+  /** Change a role or the active flag; drops the account's sessions when access shrinks. */
+  @Roles('admin')
+  @Patch('users/:id')
+  updateUser(@Req() request: AuthedRequest, @Param('id') id: string, @Body() dto: UpdateUserDto) {
+    return this.authService.updateUser(request.user!.sub, id, dto);
+  }
+
+  @Roles('admin')
+  @Delete('users/:id')
+  @HttpCode(200)
+  deactivateUser(@Req() request: AuthedRequest, @Param('id') id: string) {
+    return this.authService.deactivateUser(request.user!.sub, id);
   }
 }
