@@ -1,14 +1,15 @@
 FROM node:20-alpine AS base
 WORKDIR /app
 
-# Install dependencies only when needed
+# Install dependencies only when needed (package.json + lockfile are required here)
 FROM base AS dependencies
 COPY package.json package-lock.json ./
 RUN npm ci
 
-# Rebuild the source code only when needed
-FROM base AS builder
-COPY --from=dependencies /app/node_modules ./node_modules
+# Rebuild the source code only when needed. Inheriting from the dependencies
+# stage keeps /app/package.json, /app/package-lock.json and /app/node_modules,
+# which `npm run build` needs in order to resolve the build script.
+FROM dependencies AS builder
 COPY tsconfig.json nest-cli.json ./
 COPY src ./src
 RUN npm run build
