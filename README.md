@@ -82,7 +82,9 @@ All settings are read from environment variables.
 | `DB_LOGGING` | `false` | Log every SQL statement |
 | `JWT_SECRET` | `change-this-secret` | Token signing key — **change in production** |
 | `JWT_EXPIRES_IN` | `1h` | Token lifetime |
-| `BCRYPT_ROUNDS` | `10` | Password hashing cost |
+| `BCRYPT_ROUNDS` | `10` | Reserved — passwords are hashed with scrypt |
+| `ADMIN_USERNAME` | `admin` | Username of the initial administrator |
+| `ADMIN_INITIAL_PASSWORD` | *(generated)* | Password for that first administrator; used only when the users table is empty |
 | `DLp_RETENTION_PERIOD` | `90` | DLP violation retention (days) |
 | `DLp_REAL_TIME_MONITORING` | `true` | Enable real-time DLP monitoring |
 | `VULNERABILITY_SCAN_INTERVAL` | `3600000` | Scan interval (ms) |
@@ -98,6 +100,23 @@ There are no migrations in this repository. `DB_SYNCHRONIZE=true` lets TypeORM c
 ## API
 
 Base URL `http://localhost:3000`. `/` serves the browser console; every other path returns JSON.
+
+**Every endpoint requires an `Authorization: Bearer <token>` header** except `POST /auth/login`, `GET /health` and the console at `/`.
+
+### Authentication
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `POST` | `/auth/login` | Exchange credentials for a token — `{ "username", "password" }` |
+| `GET` | `/auth/me` | Claims carried by the presented token |
+
+```bash
+TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \n  -H 'content-type: application/json' \n  -d '{"username":"admin","password":"your-password"}' | jq -r .accessToken)
+
+curl -H "Authorization: Bearer $TOKEN" http://localhost:3000/agents
+```
+
+On first start, when the users table is empty, an administrator is created. Set `ADMIN_INITIAL_PASSWORD` to choose the password; otherwise one is generated and printed **once** in the logs (`docker compose logs app | grep administrator`).
 
 ### Health
 
@@ -170,7 +189,7 @@ src/
 │   ├── vulnerability/       Vulnerability service, controller, DTOs
 │   └── endpoint/            Endpoint module wiring
 ├── agents/                  Agent abstraction and Windows agent
-├── auth/                    JWT service, guard, strategy (not yet wired)
+├── auth/                    Login, global JWT guard, scrypt hashing, admin seeding
 ├── compliance/              ISO 27001 assessment service and controller
 ├── dlps/                    DLP policy engine, entities' repositories
 ├── soc/                     Socket.IO gateway and incident handler
@@ -188,7 +207,8 @@ src/
 
 ## Known gaps
 
-- **Authentication is not wired up.** `src/auth` contains a JWT service, guard and strategy, but no module registers them, so the API is currently open. Do not expose it publicly as-is.
+- Authentication is enforced by a global JWT guard, but there is no user-management API (create/deactivate accounts), no token refresh or revocation, and the `admin`/`operator`/`viewer` roles are stored without being used for authorisation yet.
+- The rate-limiting middleware exists but is not registered, so `/auth/login` is not throttled.
 - `GET /vulnerabilities/unpatched` and `/vulnerabilities/critical` are shadowed by the earlier `/:id` route; use the `unpatched` query parameter on `/vulnerabilities` instead.
 - Agent, DLP and parts of the compliance layer return stubbed data — the repositories exist but no controller or service drives them yet.
 - The DLP tables are created but no `/dlp` routes are exposed.

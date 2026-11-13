@@ -1,7 +1,9 @@
 import { Controller, Get } from '@nestjs/common';
+import { Public } from './auth/public.decorator';
 import { InjectDataSource } from '@nestjs/typeorm';
 import { DataSource } from 'typeorm';
 
+@Public()
 @Controller()
 export class HealthController {
   constructor(@InjectDataSource() private readonly dataSource: DataSource) {}

@@ -1,38 +1,50 @@
-import { Injectable, CanActivate, ExecutionContext } from '@nestjs/common';
-import { Observable } from 'rxjs';
-import { AuthService } from './auth.service';
+import {
+  CanActivate,
+  ExecutionContext,
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
+import { JwtService } from '@nestjs/jwt';
+import { IS_PUBLIC_KEY } from './public.decorator';
+import { JwtPayload } from './auth.service';
 
+/**
+ * Global guard: every route requires a valid bearer token unless it is
+ * decorated with @Public().
+ */
 @Injectable()
-export class AuthGuard implements CanActivate {
-  constructor(private authService: AuthService) {}
+export class JwtAuthGuard implements CanActivate {
+  constructor(
+    private readonly jwtService: JwtService,
+    private readonly reflector: Reflector,
+  ) {}
 
-  canActivate(context: ExecutionContext): boolean | Promise<boolean> | Observable<boolean> {
-    const request = context.switchToHttp().getRequest();
-
-    // Check for authorization header
-    const authorization = request.headers['authorization'];
-
-    if (!authorization) {
-      return false;
+  async canActivate(context: ExecutionContext): Promise<boolean> {
+    const isPublic = this.reflector.getAllAndOverride<boolean>(IS_PUBLIC_KEY, [
+      context.getHandler(),
+      context.getClass(),
+    ]);
+    if (isPublic) {
+      return true;
     }
 
-    // Extract token from "Bearer <token>"
-    const token = authorization.split(' ')[1];
+    const request = context.switchToHttp().getRequest();
+    const header: string | undefined = request.headers?.authorization;
+    if (!header || !header.startsWith('Bearer ')) {
+      throw new UnauthorizedException('Missing bearer token');
+    }
 
+    const token = header.slice('Bearer '.length).trim();
     if (!token) {
-      return false;
+      throw new UnauthorizedException('Missing bearer token');
     }
 
     try {
-      // Verify the JWT token
-      const payload = this.authService['jwtService'].verifyAsync(token);
-      
-      // If we get here, the token is valid
-      request.user = payload;
+      request.user = (await this.jwtService.verifyAsync(token)) as JwtPayload;
       return true;
-    } catch (error) {
-      // Token verification failed
-      return false;
+    } catch {
+      throw new UnauthorizedException('Invalid or expired token');
     }
   }
 }
