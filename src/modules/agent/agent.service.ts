@@ -8,11 +8,13 @@ import {
 } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { createHash, randomBytes, timingSafeEqual } from 'crypto';
-import { Repository } from 'typeorm';
+import { DataSource, Repository } from 'typeorm';
 import { Endpoint, EndpointPlatform } from '../../entities/endpoint.entity';
+import { SoftwarePackage } from '../../entities/software-package.entity';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
 import { HeartbeatAgentDto } from './dto/heartbeat-agent.dto';
+import { ReportInventoryDto } from './dto/report-inventory.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 
 const sha256 = (value: string): string => createHash('sha256').update(value).digest('hex');
@@ -39,6 +41,8 @@ export class AgentService {
 
   constructor(
     @InjectRepository(Endpoint) private readonly endpoints: Repository<Endpoint>,
+    @InjectRepository(SoftwarePackage) private readonly software: Repository<SoftwarePackage>,
+    private readonly dataSource: DataSource,
   ) {
     this.enrollToken = process.env.AGENT_ENROLL_TOKEN ?? '';
     if (!this.enrollToken) {
@@ -113,7 +117,8 @@ export class AgentService {
   }
 
   /** Agent liveness update, authenticated by the per-agent token. */
-  async heartbeat(id: string, agentToken: string | undefined, dto: HeartbeatAgentDto) {
+  /** Agent-authenticated lookup: the endpoint's own token, not a user session. */
+  private async authenticateAgent(id: string, agentToken: string | undefined): Promise<Endpoint> {
     const endpoint = await this.endpoints.findOne({ where: { id } });
     if (!endpoint || !endpoint.active) {
       throw new UnauthorizedException('Unknown or decommissioned agent');
@@ -121,6 +126,11 @@ export class AgentService {
     if (!this.tokenMatches(agentToken, endpoint.agentTokenHash)) {
       throw new UnauthorizedException('Invalid agent token');
     }
+    return endpoint;
+  }
+
+  async heartbeat(id: string, agentToken: string | undefined, dto: HeartbeatAgentDto) {
+    const endpoint = await this.authenticateAgent(id, agentToken);
 
     endpoint.lastSeenAt = new Date();
     if (dto.ipAddress) {
@@ -138,6 +148,66 @@ export class AgentService {
       ok: true,
       serverTime: new Date().toISOString(),
       endpoint: this.view(endpoint),
+    };
+  }
+
+  /**
+   * Full package snapshot from an agent. The previous report is replaced inside
+   * one transaction, so a partial upload never leaves a host half-inventoried.
+   */
+  async reportInventory(id: string, agentToken: string | undefined, dto: ReportInventoryDto) {
+    const endpoint = await this.authenticateAgent(id, agentToken);
+
+    const rows = (dto.packages ?? []).map((item) =>
+      this.software.create({
+        endpointId: endpoint.id,
+        name: item.name,
+        version: item.version,
+        vendor: item.vendor,
+        source: item.source,
+      }),
+    );
+
+    await this.dataSource.transaction(async (manager) => {
+      await manager.delete(SoftwarePackage, { endpointId: endpoint.id });
+      if (rows.length > 0) {
+        await manager.save(SoftwarePackage, rows, { chunk: 500 });
+      }
+      await manager.update(Endpoint, endpoint.id, { lastSeenAt: new Date() });
+    });
+
+    this.logger.log(`Inventory for ${endpoint.name}: ${rows.length} package(s)`);
+
+    return {
+      endpointId: endpoint.id,
+      hostname: endpoint.name,
+      accepted: rows.length,
+      reportedAt: new Date().toISOString(),
+    };
+  }
+
+  async listSoftware(id: string) {
+    const endpoint = await this.endpoints.findOne({ where: { id } });
+    if (!endpoint) {
+      throw new NotFoundException('No such endpoint');
+    }
+
+    const packages = await this.software.find({
+      where: { endpointId: id },
+      order: { name: 'ASC' },
+    });
+
+    return {
+      endpointId: id,
+      hostname: endpoint.name,
+      count: packages.length,
+      packages: packages.map((item) => ({
+        name: item.name,
+        version: item.version,
+        vendor: item.vendor ?? null,
+        source: item.source ?? null,
+        reportedAt: item.reportedAt,
+      })),
     };
   }
 

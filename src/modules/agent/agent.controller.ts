@@ -5,6 +5,7 @@ import { AgentService } from './agent.service';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
 import { HeartbeatAgentDto } from './dto/heartbeat-agent.dto';
+import { ReportInventoryDto } from './dto/report-inventory.dto';
 import { UpdateAgentDto } from './dto/update-agent.dto';
 
 @Controller('agents')
@@ -31,6 +32,18 @@ export class AgentController {
     return this.agentService.heartbeat(id, agentToken, dto);
   }
 
+  /** Full software snapshot; replaces the previous report for this host. */
+  @Public()
+  @Post(':id/inventory')
+  @HttpCode(202)
+  reportInventory(
+    @Param('id') id: string,
+    @Body() dto: ReportInventoryDto,
+    @Headers('x-agent-token') agentToken?: string,
+  ) {
+    return this.agentService.reportInventory(id, agentToken, dto);
+  }
+
   @Get()
   findAll() {
     return this.agentService.findAll();
@@ -39,6 +52,11 @@ export class AgentController {
   @Get(':id')
   findOne(@Param('id') id: string) {
     return this.agentService.findOne(id);
+  }
+
+  @Get(':id/software')
+  listSoftware(@Param('id') id: string) {
+    return this.agentService.listSoftware(id);
   }
 
   @Roles('admin', 'operator')
