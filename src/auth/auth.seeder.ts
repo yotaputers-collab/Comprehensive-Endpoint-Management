@@ -32,7 +32,7 @@ export class AuthSeeder implements OnApplicationBootstrap {
 
     const hash = await this.passwords.hash(password);
     await this.users.save(
-      this.users.create({ username, passwordHash: hash, role: 'admin', active: true }),
+      this.users.create({ username, passwordHash: hash, role: 'admin', active: true, tokenVersion: 0 }),
     );
 
     if (provided && provided.length > 0) {

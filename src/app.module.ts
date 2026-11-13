@@ -16,6 +16,7 @@ import { DlpPolicy } from './entities/dl-policy.entity';
 import { DlpRule } from './entities/dl-rule.entity';
 import { DlpViolation } from './entities/dl-violation.entity';
 import { User } from './entities/user.entity';
+import { RefreshToken } from './entities/refresh-token.entity';
 
 function buildDatabaseOptions(config: ConfigService): TypeOrmModuleOptions {
   return {
@@ -25,7 +26,7 @@ function buildDatabaseOptions(config: ConfigService): TypeOrmModuleOptions {
     username: config.get<string>('DB_USERNAME') ?? 'postgres',
     password: config.get<string>('DB_PASSWORD') ?? 'postgres',
     database: config.get<string>('DB_DATABASE') ?? 'endpoint_management',
-    entities: [Endpoint, Vulnerability, DlpPolicy, DlpRule, DlpViolation, User],
+    entities: [Endpoint, Vulnerability, DlpPolicy, DlpRule, DlpViolation, User, RefreshToken],
     synchronize: (config.get<string>('DB_SYNCHRONIZE') ?? 'true') !== 'false',
     logging: (config.get<string>('DB_LOGGING') ?? 'false') === 'true',
     retryAttempts: 10,

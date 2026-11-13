@@ -225,18 +225,60 @@
   ];
 
   var TOKEN_KEY = 'cem.token';
+  var REFRESH_KEY = 'cem.refresh';
 
   function $(id) { return document.getElementById(id); }
 
-  function token() {
-    try { return sessionStorage.getItem(TOKEN_KEY); } catch (e) { return null; }
+  function readStore(key) {
+    try { return sessionStorage.getItem(key); } catch (e) { return null; }
   }
 
-  function setToken(value) {
+  function writeStore(key, value) {
     try {
-      if (value) { sessionStorage.setItem(TOKEN_KEY, value); }
-      else { sessionStorage.removeItem(TOKEN_KEY); }
+      if (value) { sessionStorage.setItem(key, value); }
+      else { sessionStorage.removeItem(key); }
     } catch (e) { /* storage blocked */ }
+  }
+
+  function token() { return readStore(TOKEN_KEY); }
+  function refreshToken() { return readStore(REFRESH_KEY); }
+
+  function setSession(accessToken, refresh) {
+    writeStore(TOKEN_KEY, accessToken);
+    if (refresh !== undefined) { writeStore(REFRESH_KEY, refresh); }
+  }
+
+  function clearSession() {
+    writeStore(TOKEN_KEY, null);
+    writeStore(REFRESH_KEY, null);
+  }
+
+  var refreshInFlight = null;
+
+  // Exchanges the refresh token for a new pair; the server revokes the old one.
+  function renewSession() {
+    var current = refreshToken();
+    if (!current) { return Promise.reject(new Error('no refresh token')); }
+
+    if (!refreshInFlight) {
+      refreshInFlight = fetch('/auth/refresh', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json', accept: 'application/json' },
+        body: JSON.stringify({ refreshToken: current })
+      }).then(function (res) {
+        if (!res.ok) { throw new Error('refresh rejected'); }
+        return res.json();
+      }).then(function (data) {
+        setSession(data.accessToken, data.refreshToken);
+        return data.accessToken;
+      });
+      refreshInFlight.then(
+        function () { refreshInFlight = null; },
+        function () { refreshInFlight = null; }
+      );
+    }
+
+    return refreshInFlight;
   }
 
   function esc(value) {
@@ -245,15 +287,17 @@
     });
   }
 
-  function get(path) {
+  function get(path, isRetry) {
     var headers = { accept: 'application/json' };
     var current = token();
     if (current) { headers.authorization = 'Bearer ' + current; }
 
     return fetch(path, { headers: headers }).then(function (res) {
       if (res.status === 401) {
-        showLogin();
-        throw new Error('not signed in');
+        if (isRetry) { showLogin(); throw new Error('not signed in'); }
+        return renewSession()
+          .then(function () { return get(path, true); })
+          .catch(function () { showLogin(); throw new Error('not signed in'); });
       }
       if (!res.ok) { throw new Error(path + ' -> HTTP ' + res.status); }
       return res.json();
@@ -496,7 +540,7 @@
   }
 
   function showLogin() {
-    setToken(null);
+    clearSession();
     $('user-chip').hidden = true;
     $('login').classList.add('open');
     if (!$('username').value) { $('username').focus(); }
@@ -517,7 +561,7 @@
       if (!res.ok) { throw new Error('Sign in failed (HTTP ' + res.status + ')'); }
       return res.json();
     }).then(function (data) {
-      setToken(data.accessToken);
+      setSession(data.accessToken, data.refreshToken);
       $('password').value = '';
       $('user-name').textContent = (data.user && data.user.username) || '';
       $('user-chip').hidden = false;
@@ -530,9 +574,21 @@
     });
   }
 
+  function signOut() {
+    var current = refreshToken();
+    if (current) {
+      fetch('/auth/logout', {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ refreshToken: current })
+      }).catch(function () { /* best effort */ });
+    }
+    showLogin();
+  }
+
   $('refresh').addEventListener('click', load);
   $('login-form').addEventListener('submit', signIn);
-  $('signout').addEventListener('click', showLogin);
+  $('signout').addEventListener('click', signOut);
   renderApi();
 
   if (token()) { load(); } else { showLogin(); }

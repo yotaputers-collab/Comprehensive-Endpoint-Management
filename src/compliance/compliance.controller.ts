@@ -1,6 +1,7 @@
 import { Controller, Get, Post, Body } from '@nestjs/common';
 import { Iso27001Service } from './iso27001.service';
 import { ComplianceReport } from './compliance.interface';
+import { Roles } from '../auth/roles.decorator';
 
 @Controller('compliance')
 export class Iso27001Controller {
@@ -64,6 +65,7 @@ export class Iso27001Controller {
     };
   }
 
+  @Roles('admin', 'operator')
   @Post('audit-log')
   createAuditLog(@Body() body: { 
     eventType: string; 

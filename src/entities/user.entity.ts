@@ -19,6 +19,10 @@ export class User {
   @Column({ type: 'boolean', default: true })
   active: boolean;
 
+  /** Bumped to invalidate every access token issued for this account. */
+  @Column({ type: 'int', default: 0 })
+  tokenVersion: number;
+
   @Column({ type: 'timestamp', nullable: true })
   lastLoginAt?: Date;
 
