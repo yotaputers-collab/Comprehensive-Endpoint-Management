@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Endpoint Management — Console</title>
+<style>
+  :root {
+    --bg: #0c131c;
+    --panel: #141d2a;
+    --panel-2: #1a2534;
+    --line: #24344a;
+    --text: #e6edf6;
+    --muted: #8fa3bd;
+    --accent: #2dd4bf;
+    --critical: #f87171;
+    --high: #fb923c;
+    --medium: #fbbf24;
+    --low: #60a5fa;
+    --ok: #34d399;
+    --radius: 10px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: radial-gradient(1200px 600px at 80% -10%, #16303a 0%, var(--bg) 55%) no-repeat, var(--bg);
+    color: var(--text);
+    font: 14px/1.5 "Segoe UI", system-ui, -apple-system, Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  .topbar {
+    display: flex; flex-wrap: wrap; gap: 16px; align-items: center;
+    justify-content: space-between;
+    padding: 18px 28px; border-bottom: 1px solid var(--line);
+    background: rgba(12, 19, 28, .85); backdrop-filter: blur(6px);
+    position: sticky; top: 0; z-index: 10;
+  }
+  .brand { display: flex; align-items: center; gap: 14px; }
+  .mark {
+    width: 34px; height: 34px; border-radius: 9px; flex: none;
+    background: linear-gradient(140deg, var(--accent), #2563eb);
+    box-shadow: 0 0 0 1px #ffffff1a inset, 0 6px 18px -6px var(--accent);
+  }
+  h1 { margin: 0; font-size: 16px; font-weight: 650; letter-spacing: .2px; }
+  .sub { margin: 0; font-size: 12px; color: var(--muted); }
+  .status { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; }
+  .pill {
+    display: inline-flex; align-items: center; gap: 7px;
+    padding: 5px 12px; border-radius: 999px; font-size: 12px; font-weight: 600;
+    border: 1px solid transparent;
+  }
+  .pill::before { content: ""; width: 7px; height: 7px; border-radius: 50%; background: currentColor; }
+  .pill.ok { color: var(--ok); background: #34d3991a; border-color: #34d39940; }
+  .pill.warn { color: var(--medium); background: #fbbf241a; border-color: #fbbf2440; }
+  .pill.bad { color: var(--critical); background: #f871711a; border-color: #f8717140; }
+  .pill.idle { color: var(--muted); background: #8fa3bd14; border-color: #8fa3bd33; }
+  .meta { font-size: 12px; color: var(--muted); }
+  .meta b { color: var(--text); font-weight: 600; }
+  .btn {
+    background: var(--panel-2); color: var(--text); border: 1px solid var(--line);
+    padding: 7px 14px; border-radius: 8px; font-size: 12.5px; font-weight: 600;
+    cursor: pointer; transition: border-color .15s, background .15s;
+  }
+  .btn:hover { border-color: var(--accent); background: #1e2c3f; }
+  main { padding: 24px 28px 8px; max-width: 1440px; margin: 0 auto; }
+  .tiles { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); margin-bottom: 18px; }
+  .tile {
+    background: linear-gradient(180deg, var(--panel), var(--panel)); border: 1px solid var(--line);
+    border-radius: var(--radius); padding: 16px 18px;
+  }
+  .tile .label { font-size: 11.5px; text-transform: uppercase; letter-spacing: .7px; color: var(--muted); }
+  .tile .value { font-size: 26px; font-weight: 650; margin-top: 6px; font-variant-numeric: tabular-nums; }
+  .tile .hint { font-size: 12px; color: var(--muted); margin-top: 2px; }
+  .grid { display: grid; gap: 14px; grid-template-columns: repeat(auto-fit, minmax(420px, 1fr)); }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; }
+  .panel > header {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 13px 18px; border-bottom: 1px solid var(--line); background: #101825;
+  }
+  .panel h2 { margin: 0; font-size: 13px; font-weight: 650; letter-spacing: .3px; }
+  .count { font-size: 12px; color: var(--muted); }
+  .body { padding: 6px 0; max-height: 340px; overflow: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 12.5px; }
+  th, td { text-align: left; padding: 8px 18px; border-bottom: 1px solid #1d2a3b; vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 11px; text-transform: uppercase; letter-spacing: .6px; }
+  tbody tr:last-child td { border-bottom: 0; }
+  code, .mono { font-family: "Cascadia Code", ui-monospace, Consolas, monospace; font-size: 12px; }
+  .sev { font-weight: 650; text-transform: capitalize; }
+  .sev.critical { color: var(--critical); }
+  .sev.high { color: var(--high); }
+  .sev.medium { color: var(--medium); }
+  .sev.low { color: var(--low); }
+  .tag { font-size: 11px; padding: 2px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+  .tag.yes { color: var(--ok); border-color: #34d39940; }
+  .notice { padding: 14px 18px; color: var(--muted); font-size: 12.5px; }
+  .notice.err { color: var(--critical); }
+  .bars { padding: 4px 18px 14px; display: grid; gap: 10px; }
+  .bar-row { display: grid; grid-template-columns: 1fr auto; gap: 8px; font-size: 12px; color: var(--muted); }
+  .bar { grid-column: 1 / -1; height: 6px; border-radius: 999px; background: #1d2a3b; overflow: hidden; }
+  .bar > i { display: block; height: 100%; background: linear-gradient(90deg, var(--accent), #3b82f6); }
+  .kv { padding: 8px 18px 14px; display: grid; gap: 6px; font-size: 12.5px; }
+  .kv div { display: flex; justify-content: space-between; gap: 16px; border-bottom: 1px dashed #1d2a3b; padding-bottom: 5px; }
+  .kv span:first-child { color: var(--muted); }
+  .sev-list { padding: 4px 18px 14px; display: grid; gap: 8px; }
+  .finding { border-left: 2px solid var(--line); padding: 2px 0 2px 10px; font-size: 12.5px; }
+  .finding b { font-weight: 600; }
+  .finding small { display: block; color: var(--muted); }
+  .api { margin-top: 14px; }
+  .api ul { list-style: none; margin: 0; padding: 4px 18px 14px; display: grid; gap: 7px; }
+  .api li { display: flex; gap: 12px; flex-wrap: wrap; font-size: 12.5px; color: var(--muted); }
+  .method { min-width: 52px; font-weight: 700; font-size: 11px; color: var(--accent); }
+  .method.post { color: var(--high); }
+  footer { padding: 14px 28px 26px; color: var(--muted); font-size: 11.5px; text-align: center; }
+  @media (max-width: 640px) {
+    main { padding: 16px; }
+    .grid { grid-template-columns: 1fr; }
+    .topbar { padding: 14px 16px; }
+  }
+</style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <div class="mark"></div>
+      <div>
+        <h1>Endpoint Management</h1>
+        <p class="sub">Security operations console</p>
+      </div>
+    </div>
+    <div class="status">
+      <span class="pill idle" id="health-pill">Checking…</span>
+      <span class="meta">database <b id="db-meta">—</b></span>
+      <span class="meta">uptime <b id="uptime-meta">—</b></span>
+      <button class="btn" id="refresh">Refresh</button>
+    </div>
+  </header>
+
+  <main>
+    <section class="tiles" id="tiles"></section>
+
+    <section class="grid">
+      <article class="panel">
+        <header><h2>Open vulnerabilities</h2><span class="count" id="vuln-count"></span></header>
+        <div class="body" id="vulns"></div>
+      </article>
+
+      <article class="panel">
+        <header><h2>ISO 27001 assessment</h2><span class="count" id="comp-count"></span></header>
+        <div class="body" id="compliance"></div>
+      </article>
+
+      <article class="panel">
+        <header><h2>Agents</h2><span class="count" id="agent-count"></span></header>
+        <div class="body" id="agents"></div>
+      </article>
+
+      <article class="panel">
+        <header><h2>Configuration</h2><span class="count">runtime</span></header>
+        <div class="body" id="config"></div>
+      </article>
+    </section>
+
+    <section class="panel api">
+      <header><h2>API endpoints</h2><span class="count">this service</span></header>
+      <ul id="api-list"></ul>
+    </section>
+  </main>
+
+  <footer>Read-only view · auto-refreshes every 15 s · <span id="stamp">—</span></footer>
+
+<script>
+(function () {
+  'use strict';
+
+  var ENDPOINTS = [
+    ['GET', '/health', 'Liveness and database check'],
+    ['GET', '/agents', 'Agent inventory'],
+    ['POST', '/agents', 'Create an agent'],
+    ['GET', '/vulnerabilities', 'Paged vulnerability list'],
+    ['POST', '/vulnerabilities/:id/patche', 'Mark a vulnerability patched'],
+    ['GET', '/configuration', 'Effective runtime configuration'],
+    ['GET', '/compliance/assessment', 'ISO 27001 assessment report'],
+    ['POST', '/compliance/audit-log', 'Record an audit event']
+  ];
+
+  function $(id) { return document.getElementById(id); }
+
+  function esc(value) {
+    return String(value === undefined || value === null ? '' : value).replace(/[&<>"']/g, function (c) {
+      return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c];
+    });
+  }
+
+  function get(path) {
+    return fetch(path, { headers: { accept: 'application/json' } }).then(function (res) {
+      if (!res.ok) { throw new Error(path + ' -> HTTP ' + res.status); }
+      return res.json();
+    });
+  }
+
+  function fmtUptime(seconds) {
+    if (typeof seconds !== 'number' || !isFinite(seconds)) { return '-'; }
+    var m = Math.floor(seconds / 60), s = Math.round(seconds % 60);
+    if (m >= 60) { return Math.floor(m / 60) + 'h ' + (m % 60) + 'm'; }
+    return m ? m + 'm ' + s + 's' : s + 's';
+  }
+
+  function tile(label, value, hint) {
+    return '<div class="tile"><div class="label">' + esc(label) + '</div>' +
+      '<div class="value">' + esc(value) + '</div>' +
+      '<div class="hint">' + esc(hint) + '</div></div>';
+  }
+
+  function notice(message, isError) {
+    return '<div class="notice' + (isError ? ' err' : '') + '">' + esc(message) + '</div>';
+  }
+
+  function setHealth(health) {
+    var pill = $('health-pill');
+    var ok = health && health.status === 'ok';
+    pill.className = 'pill ' + (ok ? 'ok' : 'warn');
+    pill.textContent = ok ? 'Healthy' : (health && health.status ? health.status : 'unknown');
+    $('db-meta').textContent = (health && health.database) || '-';
+    $('uptime-meta').textContent = fmtUptime(health && health.uptime);
+  }
+
+  function setFailure(reason) {
+    var pill = $('health-pill');
+    pill.className = 'pill bad';
+    pill.textContent = 'Unreachable';
+    $('db-meta').textContent = '-';
+    $('uptime-meta').textContent = '-';
+    $('tiles').innerHTML = tile('Service', 'down', reason) +
+      tile('Open vulnerabilities', '-', 'awaiting API') +
+      tile('Compliance', '-', 'awaiting API') +
+      tile('Agents', '-', 'awaiting API');
+  }
+
+  // /vulnerabilities returns TypeORM's [rows, total] tuple.
+  function normaliseVulnerabilities(payload) {
+    if (Array.isArray(payload) && payload.length === 2 && Array.isArray(payload[0])) {
+      return { rows: payload[0], total: payload[1] };
+    }
+    if (Array.isArray(payload)) { return { rows: payload, total: payload.length }; }
+    return { rows: [], total: 0 };
+  }
+
+  function renderVulnerabilities(payload) {
+    var data = normaliseVulnerabilities(payload);
+    $('vuln-count').textContent = data.total + ' total';
+
+    if (!data.rows.length) {
+      $('vulns').innerHTML = notice('No vulnerabilities recorded yet. POST to /vulnerabilities to add one.');
+      return;
+    }
+
+    var rows = data.rows.slice(0, 25).map(function (v) {
+      var severity = String(v.severity || '').toLowerCase();
+      return '<tr>' +
+        '<td class="sev ' + esc(severity) + '">' + esc(severity || '-') + '</td>' +
+        '<td class="mono">' + esc(v.cveId || '-') + '</td>' +
+        '<td>' + esc(v.name || '-') +
+        '<br><small style="color:var(--muted)">' + esc(v.type || '') + '</small></td>' +
+        '<td><span class="tag ' + (v.isPatched ? 'yes' : '') + '">' +
+        (v.isPatched ? 'patched' : 'open') + '</span></td>' +
+        '</tr>';
+    }).join('');
+
+    $('vulns').innerHTML = '<table><thead><tr><th>Severity</th><th>Reference</th>' +
+      '<th>Name</th><th>Status</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function renderCompliance(report) {
+    var summary = (report && report.summary) || {};
+    var pct = typeof summary.compliancePercentage === 'number' ? summary.compliancePercentage : 0;
+    var total = summary.totalRequirements || 0;
+    $('comp-count').textContent = (report && report.reportId) || '';
+
+    var bars = [
+      ['Compliant', summary.compliant, 'var(--ok)'],
+      ['Non-compliant', summary.nonCompliant, 'var(--critical)'],
+      ['Partial', summary.partial, 'var(--medium)'],
+      ['Not applicable', summary.notApplicable, 'var(--muted)']
+    ].map(function (item) {
+      var value = item[1] || 0;
+      var width = total ? Math.max(0, Math.min(100, (value / total) * 100)) : 0;
+      return '<div class="bar-row"><span>' + esc(item[0]) + ' &middot; ' + value + '</span>' +
+        '<span>' + Math.round(width) + '%</span>' +
+        '<div class="bar"><i style="width:' + width + '%;background:' + item[2] + '"></i></div></div>';
+    }).join('');
+
+    var findings = (report && report.findings) || [];
+    var findingHtml = findings.slice(0, 6).map(function (f) {
+      return '<div class="finding"><b>' + esc(f.requirementId || 'requirement') + '</b> &mdash; ' +
+        esc(f.description || '') +
+        '<small>' + esc(f.severity || '') + ' &middot; ' + esc(f.status || '') + '</small></div>';
+    }).join('');
+
+    $('compliance').innerHTML =
+      '<div class="bars">' +
+        '<div class="bar-row"><span><b style="color:var(--text)">' + pct + '%</b> compliant</span>' +
+        '<span>' + (summary.compliant || 0) + '/' + total + '</span>' +
+        '<div class="bar"><i style="width:' + pct + '%"></i></div></div>' +
+        bars +
+      '</div>' +
+      (findingHtml ? '<div class="sev-list">' + findingHtml + '</div>' : notice('No findings recorded.'));
+  }
+
+  function renderAgents(payload) {
+    if (typeof payload === 'string') {
+      $('agent-count').textContent = 'placeholder';
+      $('agents').innerHTML = notice('Agent listing is still a stub in this build: "' + payload + '".');
+      return;
+    }
+
+    if (!Array.isArray(payload) || !payload.length) {
+      $('agent-count').textContent = '0';
+      $('agents').innerHTML = notice('No agents registered.');
+      return;
+    }
+
+    $('agent-count').textContent = payload.length + ' registered';
+    var rows = payload.slice(0, 25).map(function (a) {
+      return '<tr><td>' + esc(a.name || a.id || '-') + '</td>' +
+        '<td>' + esc(a.platform || '-') + '</td>' +
+        '<td><span class="tag ' + (a.status === 'active' ? 'yes' : '') + '">' +
+        esc(a.status || 'unknown') + '</span></td></tr>';
+    }).join('');
+
+    $('agents').innerHTML = '<table><thead><tr><th>Name</th><th>Platform</th>' +
+      '<th>Status</th></tr></thead><tbody>' + rows + '</tbody></table>';
+  }
+
+  function flatten(object, prefix, out) {
+    Object.keys(object || {}).forEach(function (key) {
+      var value = object[key];
+      var path = prefix ? prefix + '.' + key : key;
+      if (value !== null && typeof value === 'object' && !Array.isArray(value)) {
+        flatten(value, path, out);
+      } else {
+        out.push([path, Array.isArray(value) ? value.join(', ') : value]);
+      }
+    });
+    return out;
+  }
+
+  function renderConfig(config) {
+    var pairs = flatten(config, '', []);
+    if (!pairs.length) {
+      $('config').innerHTML = notice('No configuration returned.');
+      return;
+    }
+
+    var rows = pairs.slice(0, 40).map(function (pair) {
+      var value = pair[1];
+      var text = (value === undefined || value === null || value === '') ? '-' : String(value);
+      return '<div><span class="mono">' + esc(pair[0]) + '</span>' +
+        '<span class="mono">' + esc(text) + '</span></div>';
+    }).join('');
+
+    $('config').innerHTML = '<div class="kv">' + rows + '</div>';
+  }
+
+  function renderApi() {
+    $('api-list').innerHTML = ENDPOINTS.map(function (entry) {
+      return '<li><span class="method ' + (entry[0] === 'POST' ? 'post' : '') + '">' + entry[0] + '</span>' +
+        '<span class="mono">' + esc(entry[1]) + '</span>' +
+        '<span>' + esc(entry[2]) + '</span></li>';
+    }).join('');
+  }
+
+  function load() {
+    var button = $('refresh');
+    button.disabled = true;
+
+    return Promise.allSettled([
+      get('/health'),
+      get('/vulnerabilities'),
+      get('/compliance/assessment'),
+      get('/agents'),
+      get('/configuration')
+    ]).then(function (results) {
+      var health = results[0];
+      var vulns = results[1];
+      var compliance = results[2];
+      var agents = results[3];
+      var config = results[4];
+
+      if (health.status === 'fulfilled') {
+        setHealth(health.value);
+        var total = vulns.status === 'fulfilled' ? normaliseVulnerabilities(vulns.value).total : 0;
+        var pct = (compliance.status === 'fulfilled' && compliance.value && compliance.value.summary)
+          ? compliance.value.summary.compliancePercentage
+          : null;
+
+        $('tiles').innerHTML =
+          tile('Service', health.value.status === 'ok' ? 'Online' : 'Degraded',
+            'database ' + (health.value.database || 'unknown')) +
+          tile('Uptime', fmtUptime(health.value.uptime), 'since last restart') +
+          tile('Vulnerabilities', total, 'recorded in database') +
+          tile('Compliance score', pct === null ? '-' : pct + '%', 'ISO 27001');
+      } else {
+        setFailure('health request failed');
+      }
+
+      if (vulns.status === 'fulfilled') {
+        renderVulnerabilities(vulns.value);
+      } else {
+        $('vulns').innerHTML = notice('Could not load vulnerabilities: ' + vulns.reason.message, true);
+      }
+
+      if (compliance.status === 'fulfilled') {
+        renderCompliance(compliance.value);
+      } else {
+        $('compliance').innerHTML = notice('Could not load the compliance report: ' + compliance.reason.message, true);
+      }
+
+      if (agents.status === 'fulfilled') {
+        renderAgents(agents.value);
+      } else {
+        $('agents').innerHTML = notice('Could not load agents: ' + agents.reason.message, true);
+      }
+
+      if (config.status === 'fulfilled') {
+        renderConfig(config.value);
+      } else {
+        $('config').innerHTML = notice('Could not load configuration: ' + config.reason.message, true);
+      }
+
+      $('stamp').textContent = 'updated ' + new Date().toLocaleTimeString();
+    }).then(function () {
+      button.disabled = false;
+    });
+  }
+
+  $('refresh').addEventListener('click', load);
+  renderApi();
+  load();
+  setInterval(function () {
+    if (!document.hidden) { load(); }
+  }, 15000);
+})();
+</script>
+</body>
+</html>

@@ -30,6 +30,8 @@ curl http://localhost:3000/health
 # {"status":"ok","database":"up","uptime":5}
 ```
 
+Then open **http://localhost:3000/** in a browser for the console — service health, open vulnerabilities, the ISO 27001 score, agents and runtime configuration, refreshed every 15 seconds.
+
 Compose starts three services:
 
 | Service | Container | Port |
@@ -95,7 +97,7 @@ There are no migrations in this repository. `DB_SYNCHRONIZE=true` lets TypeORM c
 
 ## API
 
-Base URL `http://localhost:3000`. Requests and responses are JSON.
+Base URL `http://localhost:3000`. `/` serves the browser console; every other path returns JSON.
 
 ### Health
 
@@ -154,6 +156,8 @@ io('http://localhost:3001').on('security-event', (event) => console.log(event));
 ## Project structure
 
 ```
+public/
+└── index.html               Read-only console (served at /)
 src/
 ├── main.ts                  Bootstrap: validation pipe, port/host from env
 ├── app.module.ts            Root module: config, TypeORM, feature modules
@@ -188,6 +192,7 @@ src/
 - `GET /vulnerabilities/unpatched` and `/vulnerabilities/critical` are shadowed by the earlier `/:id` route; use the `unpatched` query parameter on `/vulnerabilities` instead.
 - Agent, DLP and parts of the compliance layer return stubbed data — the repositories exist but no controller or service drives them yet.
 - The DLP tables are created but no `/dlp` routes are exposed.
+- The console at `/` is read-only: it displays data but cannot create or edit records.
 
 ## Troubleshooting
 

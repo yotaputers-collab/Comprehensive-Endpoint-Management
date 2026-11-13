@@ -28,6 +28,9 @@ RUN npm ci --omit=dev && npm cache clean --force
 
 COPY --from=builder /app/dist ./dist
 
+# Static console served at /
+COPY public ./public
+
 # Run the application as non-root user
 USER appuser
 
