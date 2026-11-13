@@ -92,6 +92,11 @@ All settings are read from environment variables.
 | `AGENT_ONLINE_WINDOW_MS` | `120000` | Silence after which a host is reported offline |
 | `OSV_API_BASE` | `https://api.osv.dev` | Advisory source; point at a mirror for air-gapped installs |
 | `OSV_TTL_HOURS` | `24` | How long a cached OSV answer is reused |
+| `OSV_DETAIL_CONCURRENCY` | `4` | Parallel advisory fetches during a scan |
+| `SCAN_INTERVAL_MINUTES` | `1440` | Automatic scan period; `0` disables the timer |
+| `SCAN_STALE_AFTER_MINUTES` | interval | Age at which a host's scan counts as due |
+| `SCAN_CONCURRENCY` | `2` | Hosts scanned in parallel within one pass |
+| `SCAN_MAX_HOSTS_PER_RUN` | `50` | Upper bound on hosts per scan pass |
 | `DLp_RETENTION_PERIOD` | `90` | DLP violation retention (days) |
 | `DLp_REAL_TIME_MONITORING` | `true` | Enable real-time DLP monitoring |
 | `VULNERABILITY_SCAN_INTERVAL` | `3600000` | Scan interval (ms) |
@@ -209,9 +214,27 @@ curl -s -X POST http://localhost:3000/agents/$ENDPOINT_ID/scan \
   using cached answers only.
 - **Reconciled**: new advisories are inserted, existing rows updated, and findings for software that is
   no longer installed are removed. A finding an operator marked patched stays patched.
-- **Severity** comes from the advisory's `database_specific` or `ecosystem_specific` field, otherwise
-  `unknown` (shown as-is rather than guessed).
+- **Severity** uses the advisory's `database_specific` or `ecosystem_specific` label when present;
+  otherwise it is derived from the CVSS v3 vector (`CVSS:3.1/...`) with the published base-score
+  formula. Only when both are missing does it stay `unknown`.
 - Each row records package, installed version and fixed version, so the UI shows the upgrade needed.
+
+### Scheduled scans
+
+A scan loop runs in-process and rescans hosts whose last scan is older than the staleness threshold, so
+findings do not age silently. Scans run one pass at a time, `SCAN_CONCURRENCY` hosts in parallel, and at
+most `SCAN_MAX_HOSTS_PER_RUN` hosts per pass; hosts with no software report are skipped rather than
+marked as scanned.
+
+| Method | Path | Description |
+| --- | --- | --- |
+| `GET` | `/scan/status` | Scheduler settings and the outcome of the last run (admin) |
+| `POST` | `/scan/run` | Sweep due hosts now; `?force=true` rescans even fresh ones (admin/operator) |
+
+Set `SCAN_INTERVAL_MINUTES=0` to switch the timer off — manual runs still honour
+`SCAN_STALE_AFTER_MINUTES` (which defaults to the interval). Advisory bodies are fetched with bounded
+parallelism (`OSV_DETAIL_CONCURRENCY`), which keeps the first scan of a large fleet from serialising
+hundreds of round trips.
 
 ### Health
 
@@ -305,7 +328,8 @@ src/
 - Accounts are deactivated, never deleted, so the users table keeps its audit trail.
 - Rate-limit counters are in memory and per process: running more than one replica means each keeps its own budget (use Redis or an ingress limiter to share it).
 - `GET /vulnerabilities/unpatched` and `/vulnerabilities/critical` are shadowed by the earlier `/:id` route; use the `unpatched` query parameter on `/vulnerabilities` instead.
-- Scanning is manual: nothing schedules it, so findings age until someone presses Scan. Coverage depends on OSV carrying the ecosystem — Ubuntu, Debian, Alpine and language packages are covered, other distros are skipped.
+- The scan loop runs inside the application: with more than one replica each would scan independently, so run a single scanner instance (or move the sweep to a queue) when you scale out.
+- Coverage stops where OSV stops: Ubuntu, Debian, Alpine and language packages are matched, while RHEL/CentOS/SUSE distro packages are skipped.
 - `/agents/:id/deploy` and `/collect-data` answer `501`: there is no command channel, so nothing can be run on a host.
 - DLP and parts of the compliance layer still return stubbed data, and no `/dlp` routes exist.
 - The DLP tables are created but no `/dlp` routes are exposed.
