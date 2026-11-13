@@ -1,0 +1,44 @@
+{
+  "name": "endpoint-management-platform",
+  "version": "1.0.0",
+  "description": "Endpoint management platform replacing McAfee tools",
+  "main": "dist/main.js",
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/main.js",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "keywords": ["endpoint-management", "security", "vulnerability", "dlp"],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "@nestjs/core": "^10.3.0",
+    "@nestjs/platform-express": "^10.3.0",
+    "reflect-metadata": "^0.2.0",
+    "typeorm": "^0.3.0",
+    "typescript": "^5.3.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0"
+  },
+  "dependencies": {
+    "class-validator": "^0.14.0",
+    "class-transformer": "^0.5.0",
+    "bcrypt": "^5.0.0",
+    "jsonwebtoken": "^9.0.0",
+    "typeorm": "^0.3.0",
+    "pg": "^8.11.0"
+  },
+  "jest": {
+    "preset": "ts-jest",
+    "testEnvironment": "node",
+    "roots": ["src"],
+    "moduleFileExtensions": ["js", "json", "ts"],
+    "rootDir": "src",
+    "transform": {
+      "^.+\\.ts$": "ts-jest"
+    },
+    "testRegex": "spec\.ts$"
+  }
+}

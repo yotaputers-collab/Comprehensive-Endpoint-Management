@@ -1,0 +1,65 @@
+{
+  "componentName": "Page",
+  "state": {
+    "formData": {
+      "name": "",
+      "platform": "windows"
+    }
+  },
+  "methods": {
+    "platformChange": {
+      "type": "JSFunction",
+      "value": "function platformChange(value) { console.log('Platform changed to:', value); }"
+    }
+  },
+  "children": [
+    {
+      "componentName": "TinyCard",
+      "children": [
+        {
+          "componentName": "h3",
+          "children": "Agent Deployment Configuration"
+        },
+        {
+          "componentName": "TinyForm",
+          "props": {
+            "model": {"type": "JSExpression", "model": true, "value": "this.state.formData"},
+            "labelPosition": "top"
+          },
+          "children": [
+            {
+              "componentName": "TinyFormItem",
+              "props": {"label": "Name", "prop": "name", "required": true},
+              "children": [
+                {
+                  "componentName": "TinyInput",
+                  "props": {"placeholder": "Enter agent name", "modelValue": {"type": "JSExpression", "model": true, "value": "this.state.formData.name"}}
+                }
+              ]
+            },
+            {
+              "componentName": "TinyFormItem",
+              "props": {"label": "Platform", "prop": "platform"},
+              "children": [
+                {
+                  "componentName": "TinyRadioGroup",
+                  "props": {
+                    "options": [
+                      {"text": "Windows", "label": "windows"},
+                      {"text": "Linux", "label": "linux"}
+                    ],
+                    "modelValue": {"type": "JSExpression", "model": true, "value": "this.state.formData.platform"}
+                  }
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "componentName": "TinyButton",
+          "props": {"text": "Deploy Agents", "onClick": {"type": "JSFunction", "value": "function() { console.log('Deploying agents...'); }"}}
+        }
+      ]
+    }
+  ]
+}

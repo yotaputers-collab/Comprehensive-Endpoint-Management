@@ -1,0 +1,64 @@
+## GitHub Upload Package - Endpoint Management Platform
+
+**Location:** `C:\Users\Onyekachi.Orji\Downloads\Open Desktop Central\upload`
+
+**Purpose:** This folder contains all project files ready for manual upload to GitHub.
+
+**Included Files (safe to upload):**
+
+### Source Code (`src/`)
+- `app.module.ts` - Main NestJS module
+- `main.ts` - Application entry point
+- `config/app.config.ts` - Application configuration
+- `config/config.module.ts` - NestJS ConfigModule
+- `config/database.config.ts` - TypeORM PostgreSQL config
+- `entities/endpoint.entity.ts` - Endpoint database model
+- `entities/vulnerability.entity.ts` - Vulnerability model
+- `repositories/endpoint.repository.ts` - Data repository
+- `repositories/vulnerability.repository.ts` - Vulnerability repository
+- `modules/agent/` - Agent module with controller, service, DTOs, interfaces, constants, strategies
+- `modules/vulnerability/` - Vulnerability module
+- `modules/dlps/` - DLP policy manager
+- `modules/config/` - Configuration service and controller
+- `modules/auth/` - Authentication service, JWT strategy, guard, middleware
+- `modules/compliance/` - ISO 27001 compliance service and controller
+- `modules/soc/` - SOC gateway and incident handler
+- `agents/agent.base.ts` - Base agent interface
+- `agents/windows-agent.ts` - Windows agent implementation
+- `agents/agent.interface.ts` - Agent interface definitions
+
+### Documentation (`docs/`)
+- `API.md` - Complete API specification with all endpoints
+- `INSTALLATION.md` - Docker and local installation guide
+- `SECURITY.md` - Security best practices and compliance details
+
+### Docker Configuration (`docker/`)
+- `Dockerfile` - Multi-stage production build
+- `docker-compose.yml` - PostgreSQL + Application + Redis services
+- `.env.example` - Environment variable template (safe to include)
+
+### Configuration (`config/`)
+- `tsconfig.json` - TypeScript configuration
+- `package.json` - Project dependencies and scripts
+
+**Excluded (via .gitignore - will be created):**
+- `.env` - Environment variables with secrets
+- `git.conf` - Redacted PAT (already secured)
+- `node_modules/` - Dependencies (install via `npm install`)
+- `dist/` - Compiled output
+- `.swp` / `*.log` - Temporary files
+
+**To Upload to GitHub:**
+
+1. Create a new repository on github.com
+2. Initialize local repo: `git init`
+3. `git add .` (or selectively add folders)
+4. `git commit -m "feat: endpoint management platform v1.0"`
+5. `git remote add origin https://github.com/your-username/repo-name.git`
+6. `git push -u origin main`
+
+**Security Checklist Before Upload:**
+- [ ] `.env` is NOT included in the upload
+- [ ] `git.conf` PAT has been redacted ✅ (already done)
+- [ ] No API keys or passwords in source code
+- [ ] `.gitignore` will be created at repo root
