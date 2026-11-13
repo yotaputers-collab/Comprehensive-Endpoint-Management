@@ -4,6 +4,7 @@ import { TypeOrmModule, TypeOrmModuleOptions } from '@nestjs/typeorm';
 import { AgentModule } from './modules/agent/agent.module';
 import { EndpointModule } from './modules/endpoint/endpoint.module';
 import { VulnerabilityModule } from './modules/vulnerability/vulnerability.module';
+import { ScanWorker } from './modules/vulnerability/scan.worker';
 import { ConfigModule } from './config/config.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { DlpModule } from './dlps/dlps.module';
@@ -54,6 +55,7 @@ function buildDatabaseOptions(config: ConfigService): TypeOrmModuleOptions {
     AuthModule,
   ],
   controllers: [HealthController],
+    providers: [ScanWorker],
 })
 export class AppModule implements NestModule {
   configure(consumer: MiddlewareConsumer): void {
