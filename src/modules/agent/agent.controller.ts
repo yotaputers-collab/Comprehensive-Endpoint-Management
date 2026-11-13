@@ -1,6 +1,7 @@
 import { Body, Controller, Delete, Get, Headers, HttpCode, Param, Post } from '@nestjs/common';
 import { Public } from '../../auth/public.decorator';
 import { Roles } from '../../auth/roles.decorator';
+import { ScanService } from '../vulnerability/scan.service';
 import { AgentService } from './agent.service';
 import { CreateAgentDto } from './dto/create-agent.dto';
 import { EnrollAgentDto } from './dto/enroll-agent.dto';
@@ -10,7 +11,10 @@ import { UpdateAgentDto } from './dto/update-agent.dto';
 
 @Controller('agents')
 export class AgentController {
-  constructor(private readonly agentService: AgentService) {}
+  constructor(
+    private readonly agentService: AgentService,
+    private readonly scanService: ScanService,
+  ) {}
 
   /** Agent bootstrap: authenticated by the shared enrolment token, not a user. */
   @Public()
@@ -42,6 +46,14 @@ export class AgentController {
     @Headers('x-agent-token') agentToken?: string,
   ) {
     return this.agentService.reportInventory(id, agentToken, dto);
+  }
+
+  /** Match this host's software against OSV and refresh its findings. */
+  @Roles('admin', 'operator')
+  @Post(':id/scan')
+  @HttpCode(200)
+  scan(@Param('id') id: string) {
+    return this.scanService.scanEndpoint(id);
   }
 
   @Get()

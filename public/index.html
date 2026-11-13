@@ -163,6 +163,8 @@
     display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
     gap: 10px 18px; margin-bottom: 18px; font-size: 12px;
   }
+  .sheet-actions { display: flex; align-items: center; gap: 12px; margin: -4px 0 16px; }
+  .scan-note { font-size: 11.5px; color: var(--muted); }
   .meta-grid span {
     display: block; color: var(--muted); font-size: 10.5px; text-transform: uppercase;
     letter-spacing: .5px; margin-bottom: 3px;
@@ -289,6 +291,7 @@
   function clearSession() {
     writeStore(TOKEN_KEY, null);
     writeStore(REFRESH_KEY, null);
+    writeStore('cem.role', null);
   }
 
   var refreshInFlight = null;
@@ -487,12 +490,40 @@
       '<th>Status</th><th>Last seen</th></tr></thead><tbody>' + rows + '</tbody></table>';
   }
 
+  function post(path, body, isRetry) {
+    var headers = { accept: 'application/json', 'content-type': 'application/json' };
+    var current = token();
+    if (current) { headers.authorization = 'Bearer ' + current; }
+
+    return fetch(path, { method: 'POST', headers: headers, body: JSON.stringify(body || {}) })
+      .then(function (res) {
+        if (res.status === 401 && !isRetry) {
+          return renewSession()
+            .then(function () { return post(path, body, true); })
+            .catch(function () { showLogin(); throw new Error('not signed in'); });
+        }
+        return res.json().then(function (data) {
+          if (!res.ok) {
+            throw new Error((data && data.message) || ('HTTP ' + res.status));
+          }
+          return data;
+        });
+      });
+  }
+
   function closeHost() {
     $('host-modal').classList.remove('open');
   }
 
-  function renderHostDetail(endpoint, software) {
+  function canOperate() {
+    var current = readStore('cem.role');
+    return current === 'admin' || current === 'operator';
+  }
+
+  function renderHostDetail(endpoint, software, vulns) {
     var packs = (software && software.packages) || [];
+    var findings = Array.isArray(vulns) ? vulns : [];
+
     var meta = [
       ['Status', endpoint.status],
       ['Platform', endpoint.platform],
@@ -500,13 +531,40 @@
       ['OS', endpoint.osVersion || '-'],
       ['Agent', endpoint.agentVersion || '-'],
       ['Last seen', fmtSeen(endpoint.lastSeenAt)],
-      ['Enrolled', endpoint.enrolledAt ? new Date(endpoint.enrolledAt).toLocaleDateString() : '-']
+      ['Last scan', endpoint.lastScannedAt ? fmtSeen(endpoint.lastScannedAt) : 'never'],
+      ['Open findings', String(endpoint.vulnerabilityCount || 0)]
     ].map(function (row) {
       return '<div><span>' + esc(row[0]) + '</span>' + esc(row[1] || '-') + '</div>';
     }).join('');
 
-    var body = '<div class="meta-grid">' + meta + '</div>' +
-      '<h3 style="font-size:13px;margin:0 0 8px">Installed software ' +
+    var body = '<div class="meta-grid">' + meta + '</div>';
+
+    if (canOperate()) {
+      body += '<div class="sheet-actions"><button class="btn" type="button" id="scan-host" data-host="' +
+        esc(endpoint.id) + '">Scan now</button><span class="scan-note" id="scan-note"></span></div>';
+    }
+
+    body += '<h3 style="font-size:13px;margin:0 0 8px">Vulnerabilities ' +
+      '<span style="color:var(--muted);font-weight:400">' + findings.length + '</span></h3>';
+
+    if (!findings.length) {
+      body += notice('No findings for this host. Scan after it reports its software.');
+    } else {
+      var frows = findings.slice(0, 50).map(function (v) {
+        var severity = String(v.severity || 'unknown').toLowerCase();
+        return '<tr><td class="sev ' + esc(severity) + '">' + esc(severity) + '</td>' +
+          '<td class="mono">' + esc(v.cveId || v.advisoryId || '-') + '</td>' +
+          '<td>' + esc(v.packageName || '-') + '<br><small style="color:var(--muted)">' +
+          esc(v.installedVersion || '') + (v.fixedVersion ? ' &rarr; ' + esc(v.fixedVersion) : '') +
+          '</small></td>' +
+          '<td><span class="tag ' + (v.isPatched ? 'yes' : '') + '">' +
+          (v.isPatched ? 'patched' : 'open') + '</span></td></tr>';
+      }).join('');
+      body += '<table><thead><tr><th>Severity</th><th>Reference</th><th>Package</th><th>Status</th></tr></thead>' +
+        '<tbody>' + frows + '</tbody></table>';
+    }
+
+    body += '<h3 style="font-size:13px;margin:18px 0 8px">Installed software ' +
       '<span style="color:var(--muted);font-weight:400">' + packs.length + '</span></h3>';
 
     if (!packs.length) {
@@ -534,8 +592,12 @@
     $('host-body').innerHTML = notice('Loading host details...');
     $('host-modal').classList.add('open');
 
-    Promise.all([get('/agents/' + id), get('/agents/' + id + '/software')])
-      .then(function (results) { renderHostDetail(results[0], results[1]); })
+    return Promise.all([
+      get('/agents/' + id),
+      get('/agents/' + id + '/software'),
+      get('/vulnerabilities/by-endpoint/' + id)
+    ])
+      .then(function (results) { renderHostDetail(results[0], results[1], results[2]); })
       .catch(function (error) {
         $('host-body').innerHTML = notice('Could not load this host: ' + error.message, true);
       });
@@ -666,6 +728,7 @@
       return res.json();
     }).then(function (data) {
       setSession(data.accessToken, data.refreshToken);
+      writeStore('cem.role', (data.user && data.user.role) || '');
       $('password').value = '';
       $('user-name').textContent = (data.user && data.user.username) || '';
       $('user-chip').hidden = false;
@@ -698,6 +761,34 @@
     var button = event.target.closest('[data-host]');
     if (button) { openHost(button.getAttribute('data-host')); }
   });
+  $('host-body').addEventListener('click', function (event) {
+    var button = event.target.closest('#scan-host');
+    if (!button) { return; }
+
+    var id = button.getAttribute('data-host');
+    button.disabled = true;
+    $('scan-note').textContent = 'Scanning...';
+
+    post('/agents/' + id + '/scan')
+      .then(function (summary) {
+        return openHost(id).then(function () {
+          var note = $('scan-note');
+          if (note) {
+            note.textContent = summary.degraded
+              ? 'Scanned with cached data - OSV was unreachable.'
+              : summary.findings + ' finding(s): ' + summary.created + ' new, ' +
+                summary.updated + ' updated, ' + summary.resolved + ' resolved' +
+                (summary.skipped ? ', ' + summary.skipped + ' package(s) skipped' : '');
+          }
+        });
+      })
+      .catch(function (error) {
+        var note = $('scan-note');
+        if (note) { note.textContent = 'Scan failed: ' + error.message; }
+        button.disabled = false;
+      });
+  });
+
   $('host-close').addEventListener('click', closeHost);
   $('host-modal').addEventListener('click', function (event) {
     if (event.target === $('host-modal')) { closeHost(); }

@@ -13,6 +13,7 @@ import { HealthController } from './health.controller';
 import { Endpoint } from './entities/endpoint.entity';
 import { SoftwarePackage } from './entities/software-package.entity';
 import { Vulnerability } from './entities/vulnerability.entity';
+import { OsvLookup } from './entities/osv-lookup.entity';
 import { DlpPolicy } from './entities/dl-policy.entity';
 import { DlpRule } from './entities/dl-rule.entity';
 import { DlpViolation } from './entities/dl-violation.entity';
@@ -28,7 +29,7 @@ function buildDatabaseOptions(config: ConfigService): TypeOrmModuleOptions {
     username: config.get<string>('DB_USERNAME') ?? 'postgres',
     password: config.get<string>('DB_PASSWORD') ?? 'postgres',
     database: config.get<string>('DB_DATABASE') ?? 'endpoint_management',
-    entities: [Endpoint, SoftwarePackage, Vulnerability, DlpPolicy, DlpRule, DlpViolation, User, RefreshToken],
+    entities: [Endpoint, SoftwarePackage, Vulnerability, OsvLookup, DlpPolicy, DlpRule, DlpViolation, User, RefreshToken],
     synchronize: (config.get<string>('DB_SYNCHRONIZE') ?? 'true') !== 'false',
     logging: (config.get<string>('DB_LOGGING') ?? 'false') === 'true',
     retryAttempts: 10,

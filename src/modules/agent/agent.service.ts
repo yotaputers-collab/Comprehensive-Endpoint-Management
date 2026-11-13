@@ -31,6 +31,9 @@ export interface EndpointView {
   agentVersion: string;
   active: boolean;
   enrolledAt: Date;
+  lastScannedAt: Date | null;
+  vulnerabilityCount: number;
+  criticalVulnerabilities: number;
 }
 
 @Injectable()
@@ -69,6 +72,9 @@ export class AgentService {
       agentVersion: endpoint.version,
       active: endpoint.active,
       enrolledAt: endpoint.createdAt,
+      lastScannedAt: endpoint.lastScannedAt ?? null,
+      vulnerabilityCount: endpoint.vulnerabilityCount ?? 0,
+      criticalVulnerabilities: endpoint.criticalVulnerabilities ?? 0,
     };
   }
 

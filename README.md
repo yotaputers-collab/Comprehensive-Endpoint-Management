@@ -90,6 +90,8 @@ All settings are read from environment variables.
 | `ADMIN_INITIAL_PASSWORD` | *(generated)* | Password for that first administrator; used only when the users table is empty |
 | `AGENT_ENROLL_TOKEN` | *(generated)* | Shared secret agents use to enrol; generated and logged per process if unset |
 | `AGENT_ONLINE_WINDOW_MS` | `120000` | Silence after which a host is reported offline |
+| `OSV_API_BASE` | `https://api.osv.dev` | Advisory source; point at a mirror for air-gapped installs |
+| `OSV_TTL_HOURS` | `24` | How long a cached OSV answer is reused |
 | `DLp_RETENTION_PERIOD` | `90` | DLP violation retention (days) |
 | `DLp_REAL_TIME_MONITORING` | `true` | Enable real-time DLP monitoring |
 | `VULNERABILITY_SCAN_INTERVAL` | `3600000` | Scan interval (ms) |
@@ -169,6 +171,7 @@ curl -s -X POST http://localhost:3000/agents/$ENDPOINT_ID/inventory \
 | `POST` | `/agents/:id/heartbeat` | Liveness update — `X-Agent-Token` header, no user session |
 | `POST` | `/agents/:id/inventory` | Software snapshot — `X-Agent-Token` header, answers `202` |
 | `GET` | `/agents/:id/software` | Installed packages for one host |
+| `POST` | `/agents/:id/scan` | Match this host's software against OSV (admin/operator) |
 | `GET` | `/agents` | Active hosts, each with `status: online` or `offline` |
 | `GET` | `/agents/:id` | One host |
 | `POST` | `/agents` | Manual inventory entry (admin/operator) |
@@ -185,6 +188,30 @@ inserted in a single transaction, so a failed upload cannot leave a host half-in
 empty `packages` array is a valid way to clear it. Up to 5000 packages per report. On Debian/Ubuntu
 `dpkg-query` and on RHEL `rpm -qa` give the raw list; turning it into the JSON above is the agent's job.
 The console shows a host's packages when you click its name in the Agents panel.
+
+### Vulnerability scanning
+
+A scan asks OSV about the exact package versions a host reported, so version-range evaluation
+and distro backports are handled by OSV rather than re-implemented here.
+
+```bash
+curl -s -X POST http://localhost:3000/agents/$ENDPOINT_ID/scan \
+  -H "Authorization: Bearer $TOKEN"
+```
+
+- **Ecosystem** comes from the host's reported OS — `Ubuntu 22.04` becomes `Ubuntu:22.04`, `Debian 12`
+  becomes `Debian:12`, `Alpine 3.18` becomes `Alpine:v3.18` — or from the package source when it is a
+  language ecosystem (`pypi` to `PyPI`, plus `npm`, `cargo`, `go`, `maven`, `rubygems`). A host with no
+  recognisable OS version has its distro packages **skipped** rather than guessed.
+- **Cached** per `(ecosystem, package, version)` for `OSV_TTL_HOURS` (24 by default), so rescans cost
+  nothing. `OSV_API_BASE` can point at a mirror for air-gapped installations.
+- **Degrades safely**: if OSV is unreachable the scan still answers `200` with `"degraded": true`,
+  using cached answers only.
+- **Reconciled**: new advisories are inserted, existing rows updated, and findings for software that is
+  no longer installed are removed. A finding an operator marked patched stays patched.
+- **Severity** comes from the advisory's `database_specific` or `ecosystem_specific` field, otherwise
+  `unknown` (shown as-is rather than guessed).
+- Each row records package, installed version and fixed version, so the UI shows the upgrade needed.
 
 ### Health
 
@@ -254,7 +281,7 @@ src/
 ├── repositories/            Endpoint and vulnerability data access
 ├── modules/
 │   ├── agent/               Agent CRUD, DTOs, deployment/monitoring strategies
-│   ├── vulnerability/       Vulnerability service, controller, DTOs
+│   ├── vulnerability/       Vulnerability records, OSV lookup and scanning
 │   └── endpoint/            Endpoint module wiring
 ├── agents/                  Agent abstraction and Windows agent
 ├── auth/                    Login, global JWT guard, scrypt hashing, admin seeding
@@ -278,10 +305,11 @@ src/
 - Accounts are deactivated, never deleted, so the users table keeps its audit trail.
 - Rate-limit counters are in memory and per process: running more than one replica means each keeps its own budget (use Redis or an ingress limiter to share it).
 - `GET /vulnerabilities/unpatched` and `/vulnerabilities/critical` are shadowed by the earlier `/:id` route; use the `unpatched` query parameter on `/vulnerabilities` instead.
-- Nothing matches software to vulnerabilities: hosts report installed packages, but no CVE feed is consulted, so `/vulnerabilities` still lists only what you POST. `/agents/:id/deploy` and `/collect-data` answer `501` — there is no command channel to run anything on a host.
+- Scanning is manual: nothing schedules it, so findings age until someone presses Scan. Coverage depends on OSV carrying the ecosystem — Ubuntu, Debian, Alpine and language packages are covered, other distros are skipped.
+- `/agents/:id/deploy` and `/collect-data` answer `501`: there is no command channel, so nothing can be run on a host.
 - DLP and parts of the compliance layer still return stubbed data, and no `/dlp` routes exist.
 - The DLP tables are created but no `/dlp` routes are exposed.
-- The console at `/` cannot create or edit anything: it lists hosts (with a per-host software sheet), vulnerabilities, compliance and configuration, all read-only.
+- The console at `/` cannot create or edit anything: it lists hosts (with a detail sheet where admin/operator can trigger a scan), vulnerabilities, compliance and configuration.
 
 ## Troubleshooting
 
