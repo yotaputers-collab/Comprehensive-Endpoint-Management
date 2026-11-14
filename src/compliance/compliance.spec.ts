@@ -52,7 +52,8 @@ describe('Compliance assessment', () => {
         .set('authorization', `Bearer ${viewer}`);
 
       expect(response.status).toBe(200);
-      expect(typeof response.body.reportId).toBe('string');
+      // The service generates the id; the old hard-coded report used a fixed one.
+      expect(String(response.body.reportId)).toMatch(/^ISO27001-\d+$/);
       expect(response.body.generatedAt).toBeDefined();
       expect(response.body.periodStart).toBeDefined();
       expect(response.body.periodEnd).toBeDefined();
@@ -65,8 +66,10 @@ describe('Compliance assessment', () => {
 
       const { summary, findings, standards } = response.body;
 
-      expect(standards).toHaveLength(1);
-      expect(standards[0].requirements).toHaveLength(2);
+      expect(standards).toHaveLength(2);
+      expect(
+        standards.every((standard: { requirements: unknown[] }) => standard.requirements.length === 2),
+      ).toBe(true);
       expect(summary.totalRequirements).toBe(
         summary.compliant + summary.nonCompliant + summary.partial + summary.notApplicable,
       );
