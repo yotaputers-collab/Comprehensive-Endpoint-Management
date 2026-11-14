@@ -1,6 +1,25 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 
+/** Maps the grouped view back onto the environment names it was read from. */
+const SECTION_KEYS: Record<string, Record<string, string>> = {
+  database: { host: 'DB_HOST', port: 'DB_PORT', username: 'DB_USERNAME', database: 'DB_DATABASE' },
+  server: { port: 'APP_PORT', host: 'APP_HOST' },
+  security: { jwtExpiresIn: 'JWT_EXPIRES_IN', bcryptRounds: 'BCRYPT_ROUNDS' },
+  dlp: {
+    retentionPeriod: 'DLp_RETENTION_PERIOD',
+    realTimeMonitoring: 'DLp_REAL_TIME_MONITORING',
+  },
+  vulnerability: {
+    scanInterval: 'VULNERABILITY_SCAN_INTERVAL',
+    autoRemediation: 'VULNERABILITY_AUTO_REMEDIATION',
+  },
+  compliance: {
+    iso27001Enabled: 'ISO27001_ENABLED',
+    auditRetention: 'AUDIT_RETENTION_DAYS',
+  },
+};
+
 @Injectable()
 export class ConfigurationService {
   private readonly logger = new Logger(ConfigurationService.name);
@@ -72,7 +91,9 @@ export class ConfigurationService {
       for (const [section, values] of Object.entries(parsed)) {
         if (values !== null && typeof values === 'object') {
           for (const [key, value] of Object.entries(values)) {
-            this.overrides.set(key, value);
+            // A snapshot holds the grouped names, so map them back to the keys
+            // the getters read; unknown keys fall back to themselves.
+            this.overrides.set(SECTION_KEYS[section]?.[key] ?? key, value);
           }
         } else {
           this.overrides.set(section, values);

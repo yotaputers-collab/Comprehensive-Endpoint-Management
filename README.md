@@ -339,6 +339,8 @@ src/
 | --- | --- |
 | `src/auth/auth.spec.ts` | Sign-in, lockout after five failures, refresh rotation and reuse, logout revocation, role enforcement, password change |
 | `src/middleware/rate-limit.spec.ts` | Per-IP budgets, separate auth and general buckets, window expiry, `Retry-After`, limits over HTTP |
+| `src/compliance/compliance.spec.ts` | Assessment endpoint shape and role access, summary/finding arithmetic, `Iso27001Service` report |
+| `src/config/configuration.spec.ts` | Grouped settings, single keys, secret redaction, admin-only writes, backup/restore round trip |
 | `src/modules/agent/agent.spec.ts` | Enrolment token, per-agent credentials, heartbeat auth, inventory replacement, decommissioning, unimplemented commands |
 | `src/modules/vulnerability/cvss.spec.ts` | CVSS v3 base scores, severity labels, refusing vectors it cannot score |
 | `src/modules/vulnerability/scan.service.spec.ts` | OSV reconciliation: create, update, resolve, patched rows kept, degraded mode, counters |
@@ -358,8 +360,9 @@ and seeds hosts, so specs exercise the same code paths as production without a l
 - The scheduled sweep still runs per replica: with several replicas each selects its own due hosts, so a host can be swept twice. Queue jobs are claimed atomically, so `POST /scan/enqueue` is safe from any replica; when scaling out, enqueue instead of sweeping directly or run a single scheduler.
 - Coverage stops where OSV stops: Ubuntu, Debian, Alpine and language packages are matched, while RHEL/CentOS/SUSE distro packages are skipped.
 - `/agents/:id/deploy` and `/collect-data` answer `501`: there is no command channel, so nothing can be run on a host.
-- DLP and parts of the compliance layer still return stubbed data, and no `/dlp` routes exist.
+- DLP and parts of the compliance layer still return stubbed data, and no `/dlp` routes exist. In particular `GET /compliance/assessment` returns a fixed two-requirement example instead of calling `Iso27001Service`, which does build a real report.
 - The DLP tables are created but no `/dlp` routes are exposed.
+- Configuration overrides live in memory and are per process: a restart, or another replica, will not see them.
 - The console at `/` cannot create or edit anything: it lists hosts (with a detail sheet where admin/operator can trigger a scan), vulnerabilities, compliance and configuration.
 
 ## Troubleshooting
