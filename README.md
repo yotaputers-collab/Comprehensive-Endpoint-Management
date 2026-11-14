@@ -95,7 +95,6 @@ All settings are read from environment variables.
 | `OSV_DETAIL_CONCURRENCY` | `4` | Parallel advisory fetches during a scan |
 | `SCAN_INTERVAL_MINUTES` | `1440` | Automatic scan period; `0` disables the timer |
 | `SCAN_STALE_AFTER_MINUTES` | interval | Age at which a host's scan counts as due |
-| `SCAN_CONCURRENCY` | `2` | Hosts scanned in parallel within one pass |
 | `SCAN_MAX_HOSTS_PER_RUN` | `50` | Upper bound on hosts per scan pass |
 | `SCAN_WORKER_INTERVAL_MS` | `5000` | How often the queue worker polls for work |
 | `SCAN_JOB_STALE_MS` | `300000` | A job running longer than this is requeued |
@@ -224,25 +223,27 @@ curl -s -X POST http://localhost:3000/agents/$ENDPOINT_ID/scan \
 
 ### Scheduled scans
 
-A scan loop runs in-process and rescans hosts whose last scan is older than the staleness threshold, so
-findings do not age silently. Scans run one pass at a time, `SCAN_CONCURRENCY` hosts in parallel, and at
-most `SCAN_MAX_HOSTS_PER_RUN` hosts per pass; hosts with no software report are skipped rather than
-marked as scanned.
+A scan loop finds hosts whose last scan is older than the staleness threshold and **queues** them, so
+findings do not age silently. It never scans inline: at most `SCAN_MAX_HOSTS_PER_RUN` hosts are queued
+per pass, and hosts with no software report are skipped rather than queued.
 
 | Method | Path | Description |
 | --- | --- | --- |
 | `GET` | `/scan/status` | Scheduler settings and the outcome of the last run (admin) |
-| `POST` | `/scan/run` | Sweep due hosts now; `?force=true` rescans even fresh ones (admin/operator) |
+| `POST` | `/scan/run` | Queue a sweep of due hosts; `?force=true` re-queues fresh ones (admin/operator) |
+| `POST` | `/scan/enqueue` | Queue one host: `{ "endpointId": "...", "force": false }` (admin/operator) |
 
 Set `SCAN_INTERVAL_MINUTES=0` to switch the timer off — manual runs still honour
 `SCAN_STALE_AFTER_MINUTES` (which defaults to the interval). Advisory bodies are fetched with bounded
 parallelism (`OSV_DETAIL_CONCURRENCY`), which keeps the first scan of a large fleet from serialising
 hundreds of round trips.
 
-Queued scans are processed by an in-process worker that polls every `SCAN_WORKER_INTERVAL_MS`.
-Each job is claimed with a conditional update, so replicas sharing one database never run the same
-job twice. A job whose replica dies mid-scan is requeued once it has been running longer than
-`SCAN_JOB_STALE_MS`, and is failed after `SCAN_JOB_MAX_ATTEMPTS` attempts instead of retrying forever.
+Queued scans are processed by an in-process worker that polls every `SCAN_WORKER_INTERVAL_MS` and runs
+one job per tick. Each job is claimed with a conditional update, so replicas sharing one database never
+run the same job twice — which is also why a sweep only queues work. Enqueueing de-duplicates, so several
+replicas sweeping the same host produce one job, not one scan each. A job whose replica dies mid-scan is
+requeued once it has been running longer than `SCAN_JOB_STALE_MS`, and is failed after
+`SCAN_JOB_MAX_ATTEMPTS` attempts instead of retrying forever.
 
 ### Health
 
@@ -358,7 +359,7 @@ src/
 | `src/modules/vulnerability/cvss.spec.ts` | CVSS v3 base scores, severity labels, refusing vectors it cannot score |
 | `src/modules/vulnerability/scan.service.spec.ts` | OSV reconciliation: create, update, resolve, patched rows kept, degraded mode, counters |
 | `src/modules/vulnerability/scan.queue.spec.ts` | Queue claiming under concurrent replicas, orphan recovery, attempt budget, worker shutdown |
-| `src/modules/vulnerability/scan.scheduler.spec.ts` | Scheduler status, due-host selection, `force`, hosts without inventory, decommissioned hosts |
+| `src/modules/vulnerability/scan.scheduler.spec.ts` | Scheduler status, queued sweeps, worker pickup, `force`, hosts without inventory, decommissioned hosts, enqueue route |
 
 The specs run the real entities and queries against an in-memory Postgres: `src/test/pg-shim.ts`
 replaces the `pg` package through jest's `moduleNameMapper` (a `require.cache` patch would not work,
@@ -370,7 +371,8 @@ and seeds hosts, so specs exercise the same code paths as production without a l
 - Accounts are deactivated, never deleted, so the users table keeps its audit trail.
 - Rate-limit counters are in memory and per process: running more than one replica means each keeps its own budget (use Redis or an ingress limiter to share it).
 - `GET /vulnerabilities/unpatched` and `/vulnerabilities/critical` are shadowed by the earlier `/:id` route; use the `unpatched` query parameter on `/vulnerabilities` instead.
-- The scheduled sweep still runs per replica: with several replicas each selects its own due hosts, so a host can be swept twice. Queue jobs are claimed atomically, so `POST /scan/enqueue` is safe from any replica; when scaling out, enqueue instead of sweeping directly or run a single scheduler.
+- Sweeps and the worker run inside the application. Each replica selects its own due hosts, but enqueueing de-duplicates and jobs are claimed atomically, so a host is never scanned twice — at the cost of each replica polling the queue.
+- Scanning is sequential: the worker runs one job per `SCAN_WORKER_INTERVAL_MS`, so a large sweep drains slowly. Raise the interval frequency or run more replicas.
 - Coverage stops where OSV stops: Ubuntu, Debian, Alpine and language packages are matched, while RHEL/CentOS/SUSE distro packages are skipped.
 - `/agents/:id/deploy` and `/collect-data` answer `501`: there is no command channel, so nothing can be run on a host.
 - DLP still returns stubbed data and no `/dlp` routes exist. The ISO 27001 assessment measures five controls against live data, but the thresholds (90% compliant, 50% partial) and the 30-day window are fixed in code, and audit events are plain rows with no tamper-evidence or retention policy.

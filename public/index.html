@@ -822,7 +822,6 @@
       }
       pills.push('<span class="pill">interval: ' + (config.intervalMinutes ?? 1440) + ' min</span>');
       pills.push('<span class="pill">stale after: ' + (config.staleAfterMinutes ?? config.intervalMinutes ?? 1440) + ' min</span>');
-      pills.push('<span class="pill">concurrency: ' + (config.concurrency ?? 2) + '</span>');
       pills.push('<span class="pill">max hosts/run: ' + (config.maxHostsPerRun ?? 50) + '</span>');
       pills.push('<span class="pill ' + (config.running ? 'warn' : 'idle') + '">' + (config.running ? 'running' : 'idle') + '</span>');
       if (config.lastRun) {
@@ -832,7 +831,7 @@
           var finished = new Date(config.lastRun.finishedAt).toLocaleTimeString();
           pills.push('<span class="pill">finished: ' + finished + '</span>');
         }
-        pills.push('<span class="pill">hosts: ' + (config.lastRun.hosts || 0) + ', findings: ' + (config.lastRun.findings || 0) + '</span>');
+        pills.push('<span class="pill">hosts: ' + (config.lastRun.hosts || 0) + ', queued: ' + (config.lastRun.queued ?? config.lastRun.scanned ?? 0) + '</span>');
       } else {
         pills.push('<span class="pill">no run yet</span>');
       }
