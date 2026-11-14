@@ -337,6 +337,8 @@ src/
 
 | Spec | Covers |
 | --- | --- |
+| `src/auth/auth.spec.ts` | Sign-in, lockout after five failures, refresh rotation and reuse, logout revocation, role enforcement, password change |
+| `src/modules/agent/agent.spec.ts` | Enrolment token, per-agent credentials, heartbeat auth, inventory replacement, decommissioning, unimplemented commands |
 | `src/modules/vulnerability/cvss.spec.ts` | CVSS v3 base scores, severity labels, refusing vectors it cannot score |
 | `src/modules/vulnerability/scan.service.spec.ts` | OSV reconciliation: create, update, resolve, patched rows kept, degraded mode, counters |
 | `src/modules/vulnerability/scan.queue.spec.ts` | Queue claiming under concurrent replicas, orphan recovery, attempt budget, worker shutdown |
