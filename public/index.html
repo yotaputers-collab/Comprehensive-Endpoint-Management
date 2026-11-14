@@ -547,6 +547,8 @@
     if (canOperate()) {
       body += '<div class="sheet-actions"><button class="btn" type="button" id="scan-host" data-host="' +
         esc(endpoint.id) + '">Scan now</button><span class="scan-note" id="scan-note"></span></div>';
+      body += '<h3 style="font-size:13px;margin:0 0 8px">Scan queue</h3>' +
+        '<div id="host-scans">' + notice('Loading queued scans...') + '</div>';
     }
 
     body += '<h3 style="font-size:13px;margin:0 0 8px">Vulnerabilities ' +
@@ -592,6 +594,50 @@
     $('host-modal').classList.add('open');
   }
 
+  function loadHostScans(endpointId) {
+    var holder = $('host-scans');
+    if (!holder) { return; }
+
+    get('/scan/jobs?endpointId=' + encodeURIComponent(endpointId) + '&limit=5')
+      .then(function (res) {
+        var jobs = (res.json && res.json.jobs) || [];
+        if (!jobs.length) {
+          holder.innerHTML = notice('No scans queued for this host yet.');
+          return;
+        }
+
+        var rows = jobs.map(function (job) {
+          var status = String(job.status || 'queued');
+          var when = job.createdAt ? new Date(job.createdAt).toLocaleString() : '-';
+          var lineage = job.retriedFromId
+            ? '<br><small class="mono" style="color:var(--muted)">retry of ' +
+              esc(String(job.retriedFromId).slice(0, 8)) + '</small>'
+            : '';
+          var outcome = job.lastError
+            ? '<span style="color:var(--critical)">' + esc(job.lastError) + '</span>'
+            : job.summary
+              ? esc((job.summary.findings || 0) + ' finding(s)')
+              : '<span style="color:var(--muted)">-</span>';
+          var action = status === 'failed'
+            ? '<button class="btn" type="button" data-retry="' + esc(job.id) +
+              '" data-host-id="' + esc(job.endpointId) + '">Retry</button>'
+            : '';
+          return '<tr><td>' + esc(when) + lineage + '</td>' +
+            '<td><span class="tag ' + (status === 'finished' ? 'yes' : '') + '">' +
+            esc(status) + '</span></td>' +
+            '<td>' + (job.attempts || 0) + '</td>' +
+            '<td>' + outcome + '</td>' +
+            '<td>' + action + '</td></tr>';
+        }).join('');
+
+        holder.innerHTML = '<table><thead><tr><th>Queued</th><th>State</th><th>Attempts</th>' +
+          '<th>Outcome</th><th></th></tr></thead><tbody>' + rows + '</tbody></table>';
+      })
+      .catch(function (error) {
+        holder.innerHTML = notice('Could not load scans: ' + error.message, true);
+      });
+  }
+
   function openHost(id) {
     $('host-title').textContent = 'Host';
     $('host-body').innerHTML = notice('Loading host details...');
@@ -602,7 +648,10 @@
       get('/agents/' + id + '/software'),
       get('/vulnerabilities/by-endpoint/' + id)
     ])
-      .then(function (results) { renderHostDetail(results[0], results[1], results[2]); })
+      .then(function (results) {
+        renderHostDetail(results[0], results[1], results[2]);
+        if (canOperate()) { loadHostScans(results[0].id); }
+      })
       .catch(function (error) {
         $('host-body').innerHTML = notice('Could not load this host: ' + error.message, true);
       });
@@ -767,6 +816,28 @@
     if (button) { openHost(button.getAttribute('data-host')); }
   });
   $('host-body').addEventListener('click', function (event) {
+    var retryButton = event.target.closest('[data-retry]');
+    if (retryButton) {
+      var jobId = retryButton.getAttribute('data-retry');
+      var hostId = retryButton.getAttribute('data-host-id');
+      retryButton.disabled = true;
+      retryButton.textContent = 'Retrying...';
+
+      post('/scan/jobs/' + jobId + '/retry')
+        .then(function () {
+          var note = $('scan-note');
+          if (note) { note.textContent = 'Retry queued.'; }
+          loadHostScans(hostId);
+        })
+        .catch(function (error) {
+          retryButton.disabled = false;
+          retryButton.textContent = 'Retry';
+          var note = $('scan-note');
+          if (note) { note.textContent = 'Retry failed: ' + error.message; }
+        });
+      return;
+    }
+
     var button = event.target.closest('#scan-host');
     if (!button) { return; }
 

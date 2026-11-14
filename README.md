@@ -234,6 +234,7 @@ per pass, and hosts with no software report are skipped rather than queued.
 | `POST` | `/scan/enqueue` | Queue one host: `{ "endpointId": "...", "force": false }` (admin/operator) |
 | `GET` | `/scan/jobs` | Queue history with outcomes: `?status=queued\|running\|finished\|failed`, `&endpointId=`, `&limit=` (admin/operator) |
 | `POST` | `/scan/jobs/:id/retry` | Re-run a failed job; the failure stays in the history and a new attempt is queued (admin/operator) |
+| `GET` | `/scan/jobs/:id` | One job with its retry chain (`chain`, oldest first) and the retry that replaced it (`retriedBy`) (admin/operator) |
 
 Set `SCAN_INTERVAL_MINUTES=0` to switch the timer off — manual runs still honour
 `SCAN_STALE_AFTER_MINUTES` (which defaults to the interval). Advisory bodies are fetched with bounded
@@ -245,7 +246,10 @@ one job per tick. Each job is claimed with a conditional update, so replicas sha
 run the same job twice — which is also why a sweep only queues work. A failed job is retried with `POST /scan/jobs/:id/retry`, which queues a fresh attempt and leaves the
 failure in the history: the operator sees what was tried, not a silently recycled job. Retrying a job that
 is queued, running or already finished is a `409`, and if the host already has a job waiting, that job is
-returned rather than a second one being added.
+returned rather than a second one being added. The new job records `retriedFromId`, so a chain of retries
+stays walkable: `GET /scan/jobs/:id` returns the chain from the first failure to the job, plus the job that
+replaced it. The console's host sheet lists the latest five scans per host with their state, attempt count,
+outcome and a Retry action.
 
 Enqueueing de-duplicates, so several
 replicas sweeping the same host produce one job, not one scan each. A job whose replica dies mid-scan is
