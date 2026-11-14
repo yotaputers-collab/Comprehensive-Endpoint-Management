@@ -14,14 +14,13 @@ export class Iso27001Controller {
 
   @Roles('admin', 'operator')
   @Post('audit-log')
-  createAuditLog(@Body() body: { 
-    eventType: string; 
-    user?: string; 
-    endpointId?: string; 
-    details: any; 
-    complianceRelevance?: string[] 
+  createAuditLog(@Body() body: {
+    eventType: string;
+    user?: string;
+    endpointId?: string;
+    details: any;
+    complianceRelevance?: string[];
   }) {
-    // In production: save audit log to database
-    return { message: 'Audit log created successfully', logId: `log-${Date.now()}` };
+    return this.iso27001Service.recordAuditEvent(body);
   }
 }

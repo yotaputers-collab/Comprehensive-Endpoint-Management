@@ -1,4 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { InjectRepository } from '@nestjs/typeorm';
+import { In, MoreThanOrEqual, Repository } from 'typeorm';
+import { Endpoint } from '../entities/endpoint.entity';
+import { SoftwarePackage } from '../entities/software-package.entity';
+import { Vulnerability } from '../entities/vulnerability.entity';
+import { AuditEvent } from './audit-event.entity';
 import {
   ComplianceFinding,
   ComplianceReport,
@@ -6,28 +12,152 @@ import {
   ComplianceStandard,
 } from './compliance.interface';
 
-interface RequirementCheckResult {
-  status: ComplianceRequirement['status'];
-  severity: ComplianceRequirement['severity'];
-  description: string;
-  evidence?: string;
-  lastVerified?: Date;
+type RequirementStatus = ComplianceRequirement['status'];
+type RequirementSeverity = ComplianceRequirement['severity'];
+
+/** Outcome of checking one control against the database. */
+interface ControlResult {
+  status: RequirementStatus;
+  evidence: string;
   remediation?: string;
 }
+
+const PERIOD_DAYS = 30;
+const DAY_MS = 24 * 60 * 60 * 1000;
 
 @Injectable()
 export class Iso27001Service {
   private readonly logger = new Logger(Iso27001Service.name);
 
-  async assessCompliance(): Promise<ComplianceReport> {
-    this.logger.log('Starting ISO 27001 compliance assessment');
+  constructor(
+    @InjectRepository(Endpoint) private readonly endpoints: Repository<Endpoint>,
+    @InjectRepository(SoftwarePackage) private readonly software: Repository<SoftwarePackage>,
+    @InjectRepository(Vulnerability) private readonly vulnerabilities: Repository<Vulnerability>,
+    @InjectRepository(AuditEvent) private readonly auditEvents: Repository<AuditEvent>,
+  ) {}
 
-    const standards = await this.getAllStandards();
+  /** Records an audit event so later assessments have real history to cite. */
+  async recordAuditEvent(event: {
+    eventType: string;
+    user?: string;
+    endpointId?: string;
+    details?: any;
+    complianceRelevance?: string[];
+  }) {
+    const saved = await this.auditEvents.save(
+      this.auditEvents.create({
+        eventType: event.eventType,
+        user: event.user ?? null,
+        endpointId: event.endpointId ?? null,
+        details: event.details ?? null,
+        complianceRelevance: event.complianceRelevance ?? null,
+      }),
+    );
+
+    return {
+      message: 'Audit log created successfully',
+      logId: saved.id,
+      eventType: saved.eventType,
+      createdAt: saved.createdAt,
+    };
+  }
+
+  async assessCompliance(): Promise<ComplianceReport> {
+    const periodEnd = new Date();
+    const periodStart = new Date(periodEnd.getTime() - PERIOD_DAYS * DAY_MS);
+
+    const hosts = await this.endpoints.find({ where: { active: true } });
+    const hostIds = hosts.map((host) => host.id);
+
+    const packages = hostIds.length
+      ? await this.software.find({ where: { endpointId: In(hostIds) } })
+      : [];
+    const findings = hostIds.length
+      ? await this.vulnerabilities.find({ where: { endpointId: In(hostIds) } })
+      : [];
+    const auditCount = await this.auditEvents.count({
+      where: { createdAt: MoreThanOrEqual(periodStart) },
+    });
+
+    const hostsWithSoftware = new Set(packages.map((pkg) => pkg.endpointId)).size;
+    const hostsScanned = hosts.filter(
+      (host) => host.lastScannedAt && new Date(host.lastScannedAt) >= periodStart,
+    ).length;
+    const openFindings = findings.filter((finding) => !finding.isPatched);
+    const openCritical = openFindings.filter((finding) => finding.severity === 'critical');
+
+    const standards: ComplianceStandard[] = [
+      this.buildStandard(
+        'iso27001-assets',
+        'Asset management',
+        'Know which hosts and software are present',
+        periodEnd,
+        [
+          {
+            id: 'req-asset-inventory',
+            code: 'A.8.1',
+            description: 'Inventory of information assets is maintained',
+            category: 'Asset management',
+            severity: 'low',
+            result: this.assetInventory(hosts.length),
+          },
+          {
+            id: 'req-software-inventory',
+            code: 'A.8.2',
+            description: 'Software installed on assets is inventoried',
+            category: 'Asset management',
+            severity: 'medium',
+            result: this.softwareInventory(hostsWithSoftware, hosts.length),
+          },
+        ],
+      ),
+      this.buildStandard(
+        'iso27001-vulnerabilities',
+        'Technical vulnerability management',
+        'Find and remediate weaknesses in good time',
+        periodEnd,
+        [
+          {
+            id: 'req-scan-coverage',
+            code: 'A.8.8',
+            description: 'Assets are scanned for vulnerabilities each period',
+            category: 'Vulnerability management',
+            severity: 'high',
+            result: this.scanCoverage(hostsScanned, hosts.length),
+          },
+          {
+            id: 'req-critical-remediation',
+            code: 'A.8.8',
+            description: 'Critical vulnerabilities are remediated',
+            category: 'Vulnerability management',
+            severity: 'high',
+            result: this.criticalRemediation(openFindings.length, openCritical.length, hosts.length),
+          },
+        ],
+      ),
+      this.buildStandard(
+        'iso27001-logging',
+        'Logging and monitoring',
+        'Security events are recorded and reviewable',
+        periodEnd,
+        [
+          {
+            id: 'req-audit-logging',
+            code: 'A.12.4',
+            description: 'Security events are logged',
+            category: 'Logging',
+            severity: 'medium',
+            result: this.auditLogging(auditCount),
+          },
+        ],
+      ),
+    ];
+
     const report: ComplianceReport = {
       reportId: `ISO27001-${Date.now()}`,
-      generatedAt: new Date(),
-      periodStart: this.getPeriodStart(),
-      periodEnd: this.getPeriodEnd(),
+      generatedAt: periodEnd,
+      periodStart,
+      periodEnd,
       standards,
       summary: {
         totalRequirements: 0,
@@ -41,40 +171,21 @@ export class Iso27001Service {
     };
 
     for (const standard of standards) {
-      const requirements = await this.getRequirements(standard.id);
-      standard.requirements = requirements;
-
-      for (const requirement of requirements) {
-        const result = await this.checkRequirementStatus(requirement);
-        requirement.status = result.status;
-        if (result.evidence) {
-          requirement.evidence = result.evidence;
-        }
-        if (result.lastVerified) {
-          requirement.lastVerified = result.lastVerified;
-        }
-
+      for (const requirement of standard.requirements) {
         report.summary.totalRequirements += 1;
-        if (result.status === 'compliant') {
+
+        if (requirement.status === 'compliant') {
           report.summary.compliant += 1;
-        } else if (result.status === 'non-compliant') {
+        } else if (requirement.status === 'non-compliant') {
           report.summary.nonCompliant += 1;
-        } else if (result.status === 'partial') {
+        } else if (requirement.status === 'partial') {
           report.summary.partial += 1;
         } else {
           report.summary.notApplicable += 1;
         }
 
-        if (result.status !== 'compliant') {
-          const finding: ComplianceFinding = {
-            id: `finding-${requirement.id}`,
-            requirementId: requirement.id,
-            severity: result.severity,
-            description: result.description,
-            remediation: result.remediation,
-            status: result.status === 'partial' ? 'in-progress' : 'open',
-          };
-          report.findings.push(finding);
+        if (requirement.status === 'non-compliant' || requirement.status === 'partial') {
+          report.findings.push(this.toFinding(requirement));
         }
       }
     }
@@ -84,75 +195,173 @@ export class Iso27001Service {
         ? Math.round((report.summary.compliant / report.summary.totalRequirements) * 100)
         : 0;
 
-    this.logger.log('ISO 27001 compliance assessment complete');
+    this.logger.log(
+      `ISO 27001 assessment: ${report.summary.compliant}/${report.summary.totalRequirements} ` +
+        `compliant (${report.summary.compliancePercentage}%)`,
+    );
+
     return report;
   }
 
-  private async getAllStandards(): Promise<ComplianceStandard[]> {
-    return [
-      {
-        id: 'iso27001-1',
-        name: 'Information Security Policies',
-        description: 'Policies for information security management',
-        requirements: [],
-        status: 'compliant',
-        lastAssessed: new Date(),
-        nextAssessment: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      },
-      {
-        id: 'iso27001-2',
-        name: 'Access Control',
-        description: 'Control access to information and assets',
-        requirements: [],
-        status: 'compliant',
-        lastAssessed: new Date(),
-        nextAssessment: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000),
-      },
-    ];
-  }
+  private buildStandard(
+    id: string,
+    name: string,
+    description: string,
+    assessedAt: Date,
+    controls: Array<{
+      id: string;
+      code: string;
+      description: string;
+      category: string;
+      severity: RequirementSeverity;
+      result: ControlResult;
+    }>,
+  ): ComplianceStandard {
+    const requirements: ComplianceRequirement[] = controls.map((control) => ({
+      id: control.id,
+      code: control.code,
+      description: control.description,
+      category: control.category,
+      severity: control.severity,
+      status: control.result.status,
+      evidence: control.result.evidence,
+      lastVerified: assessedAt,
+    }));
 
-  private async getRequirements(standardId: string): Promise<ComplianceRequirement[]> {
-    void standardId;
-    return [
-      {
-        id: 'req-1',
-        code: 'A.1.1',
-        description: 'Security policy',
-        category: 'Policy',
-        severity: 'low',
-        status: 'compliant',
-      },
-      {
-        id: 'req-2',
-        code: 'A.1.2',
-        description: 'Organization of information security',
-        category: 'Policy',
-        severity: 'medium',
-        status: 'non-compliant',
-      },
-    ];
-  }
+    const meaningful = requirements.filter((item) => item.status !== 'not-applicable');
+    let status: ComplianceStandard['status'] = 'compliant';
 
-  private async checkRequirementStatus(
-    requirement: ComplianceRequirement,
-  ): Promise<RequirementCheckResult> {
+    if (meaningful.some((item) => item.status === 'non-compliant')) {
+      status = 'non-compliant';
+    } else if (meaningful.some((item) => item.status === 'partial')) {
+      status = 'partial';
+    } else if (meaningful.length === 0) {
+      status = 'not-applicable';
+    }
+
     return {
-      status: requirement.status || 'non-compliant',
-      severity: requirement.severity || 'medium',
-      description: requirement.description || 'Requirement not met',
-      evidence: requirement.evidence,
-      lastVerified: requirement.lastVerified,
-      remediation: `Remediate ${requirement.description}`,
+      id,
+      name,
+      description,
+      requirements,
+      status,
+      lastAssessed: assessedAt,
+      nextAssessment: new Date(assessedAt.getTime() + 365 * DAY_MS),
     };
   }
 
-  private getPeriodStart(): Date {
-    const start = new Date();
-    start.setMonth(start.getMonth() - 1);
-    return start;
+  private toFinding(requirement: ComplianceRequirement): ComplianceFinding {
+    return {
+      id: `finding-${requirement.id}`,
+      requirementId: requirement.id,
+      severity: requirement.severity,
+      description: `${requirement.code} ${requirement.description}: ${requirement.evidence}`,
+      remediation: this.remediationFor(requirement.id),
+      status: requirement.status === 'partial' ? 'in-progress' : 'open',
+    };
   }
 
-  private getPeriodEnd(): Date {
-    return new Date();
+  private remediationFor(requirementId: string): string {
+    switch (requirementId) {
+      case 'req-asset-inventory':
+        return 'Enrol the remaining hosts so the asset inventory reflects the estate.';
+      case 'req-software-inventory':
+        return 'Have agents submit a software inventory for every enrolled host.';
+      case 'req-scan-coverage':
+        return 'Run a vulnerability scan against hosts that have not been scanned this period.';
+      case 'req-critical-remediation':
+        return 'Patch or otherwise mitigate the open critical findings.';
+      case 'req-audit-logging':
+        return 'Record audit events for security-relevant activity.';
+      default:
+        return 'Review the control and address the gap.';
+    }
+  }
+
+  private coverageStatus(covered: number, total: number): RequirementStatus {
+    if (total === 0) {
+      return 'not-applicable';
+    }
+    const ratio = covered / total;
+    if (ratio >= 0.9) {
+      return 'compliant';
+    }
+    return ratio >= 0.5 ? 'partial' : 'non-compliant';
+  }
+
+  private percent(covered: number, total: number): number {
+    return total === 0 ? 0 : Math.round((covered / total) * 100);
+  }
+
+  private assetInventory(hostCount: number): ControlResult {
+    if (hostCount === 0) {
+      return { status: 'not-applicable', evidence: 'No active hosts are enrolled.' };
+    }
+    return {
+      status: 'compliant',
+      evidence: `${hostCount} active host(s) are enrolled and tracked.`,
+    };
+  }
+
+  private softwareInventory(hostsWithSoftware: number, hostCount: number): ControlResult {
+    const status = this.coverageStatus(hostsWithSoftware, hostCount);
+    return {
+      status,
+      evidence:
+        hostCount === 0
+          ? 'No active hosts are enrolled.'
+          : `${hostsWithSoftware} of ${hostCount} active host(s) reported installed software ` +
+            `(${this.percent(hostsWithSoftware, hostCount)}%).`,
+    };
+  }
+
+  private scanCoverage(scanned: number, hostCount: number): ControlResult {
+    const status = this.coverageStatus(scanned, hostCount);
+    return {
+      status,
+      evidence:
+        hostCount === 0
+          ? 'No active hosts are enrolled.'
+          : `${scanned} of ${hostCount} active host(s) were scanned in the last ${PERIOD_DAYS} days ` +
+            `(${this.percent(scanned, hostCount)}%).`,
+    };
+  }
+
+  private criticalRemediation(
+    openFindings: number,
+    openCritical: number,
+    hostCount: number,
+  ): ControlResult {
+    if (hostCount === 0) {
+      return { status: 'not-applicable', evidence: 'No active hosts are enrolled.' };
+    }
+
+    if (openCritical === 0) {
+      return {
+        status: 'compliant',
+        evidence:
+          openFindings === 0
+            ? 'No open vulnerability findings on enrolled hosts.'
+            : `${openFindings} open finding(s), none of them critical.`,
+      };
+    }
+
+    return {
+      status: 'non-compliant',
+      evidence: `${openCritical} of ${openFindings} open finding(s) are critical and unresolved.`,
+    };
+  }
+
+  private auditLogging(auditCount: number): ControlResult {
+    if (auditCount === 0) {
+      return {
+        status: 'non-compliant',
+        evidence: `No audit events recorded in the last ${PERIOD_DAYS} days.`,
+      };
+    }
+    return {
+      status: 'compliant',
+      evidence: `${auditCount} audit event(s) recorded in the last ${PERIOD_DAYS} days.`,
+    };
   }
 }
