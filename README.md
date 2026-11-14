@@ -97,6 +97,9 @@ All settings are read from environment variables.
 | `SCAN_STALE_AFTER_MINUTES` | interval | Age at which a host's scan counts as due |
 | `SCAN_CONCURRENCY` | `2` | Hosts scanned in parallel within one pass |
 | `SCAN_MAX_HOSTS_PER_RUN` | `50` | Upper bound on hosts per scan pass |
+| `SCAN_WORKER_INTERVAL_MS` | `5000` | How often the queue worker polls for work |
+| `SCAN_JOB_STALE_MS` | `300000` | A job running longer than this is requeued |
+| `SCAN_JOB_MAX_ATTEMPTS` | `3` | Attempts before an abandoned job is failed |
 | `DLp_RETENTION_PERIOD` | `90` | DLP violation retention (days) |
 | `DLp_REAL_TIME_MONITORING` | `true` | Enable real-time DLP monitoring |
 | `VULNERABILITY_SCAN_INTERVAL` | `3600000` | Scan interval (ms) |
@@ -235,6 +238,11 @@ Set `SCAN_INTERVAL_MINUTES=0` to switch the timer off — manual runs still hono
 `SCAN_STALE_AFTER_MINUTES` (which defaults to the interval). Advisory bodies are fetched with bounded
 parallelism (`OSV_DETAIL_CONCURRENCY`), which keeps the first scan of a large fleet from serialising
 hundreds of round trips.
+
+Queued scans are processed by an in-process worker that polls every `SCAN_WORKER_INTERVAL_MS`.
+Each job is claimed with a conditional update, so replicas sharing one database never run the same
+job twice. A job whose replica dies mid-scan is requeued once it has been running longer than
+`SCAN_JOB_STALE_MS`, and is failed after `SCAN_JOB_MAX_ATTEMPTS` attempts instead of retrying forever.
 
 ### Health
 

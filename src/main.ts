@@ -15,6 +15,8 @@ async function bootstrap(): Promise<void> {
 
   const port = Number(process.env.APP_PORT ?? 3000);
   const host = process.env.APP_HOST ?? '0.0.0.0';
+  app.enableShutdownHooks();
+
   await app.listen(port, host);
 
   Logger.log(`Endpoint Management API listening on http://${host}:${port}`, 'Bootstrap');

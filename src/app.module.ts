@@ -5,6 +5,7 @@ import { AgentModule } from './modules/agent/agent.module';
 import { EndpointModule } from './modules/endpoint/endpoint.module';
 import { VulnerabilityModule } from './modules/vulnerability/vulnerability.module';
 import { ScanWorker } from './modules/vulnerability/scan.worker';
+import { ScanJob } from './modules/vulnerability/scan.queue.entity';
 import { ConfigModule } from './config/config.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { DlpModule } from './dlps/dlps.module';
@@ -30,7 +31,7 @@ function buildDatabaseOptions(config: ConfigService): TypeOrmModuleOptions {
     username: config.get<string>('DB_USERNAME') ?? 'postgres',
     password: config.get<string>('DB_PASSWORD') ?? 'postgres',
     database: config.get<string>('DB_DATABASE') ?? 'endpoint_management',
-    entities: [Endpoint, SoftwarePackage, Vulnerability, OsvLookup, DlpPolicy, DlpRule, DlpViolation, User, RefreshToken],
+    entities: [Endpoint, SoftwarePackage, Vulnerability, OsvLookup, ScanJob, DlpPolicy, DlpRule, DlpViolation, User, RefreshToken],
     synchronize: (config.get<string>('DB_SYNCHRONIZE') ?? 'true') !== 'false',
     logging: (config.get<string>('DB_LOGGING') ?? 'false') === 'true',
     retryAttempts: 10,
