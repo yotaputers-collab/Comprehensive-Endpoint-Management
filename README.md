@@ -233,6 +233,7 @@ per pass, and hosts with no software report are skipped rather than queued.
 | `POST` | `/scan/run` | Queue a sweep of due hosts; `?force=true` re-queues fresh ones (admin/operator) |
 | `POST` | `/scan/enqueue` | Queue one host: `{ "endpointId": "...", "force": false }` (admin/operator) |
 | `GET` | `/scan/jobs` | Queue history with outcomes: `?status=queued\|running\|finished\|failed`, `&endpointId=`, `&limit=` (admin/operator) |
+| `POST` | `/scan/jobs/:id/retry` | Re-run a failed job; the failure stays in the history and a new attempt is queued (admin/operator) |
 
 Set `SCAN_INTERVAL_MINUTES=0` to switch the timer off — manual runs still honour
 `SCAN_STALE_AFTER_MINUTES` (which defaults to the interval). Advisory bodies are fetched with bounded
@@ -241,7 +242,12 @@ hundreds of round trips.
 
 Queued scans are processed by an in-process worker that polls every `SCAN_WORKER_INTERVAL_MS` and runs
 one job per tick. Each job is claimed with a conditional update, so replicas sharing one database never
-run the same job twice — which is also why a sweep only queues work. Enqueueing de-duplicates, so several
+run the same job twice — which is also why a sweep only queues work. A failed job is retried with `POST /scan/jobs/:id/retry`, which queues a fresh attempt and leaves the
+failure in the history: the operator sees what was tried, not a silently recycled job. Retrying a job that
+is queued, running or already finished is a `409`, and if the host already has a job waiting, that job is
+returned rather than a second one being added.
+
+Enqueueing de-duplicates, so several
 replicas sweeping the same host produce one job, not one scan each. A job whose replica dies mid-scan is
 requeued once it has been running longer than `SCAN_JOB_STALE_MS`, and is failed after
 `SCAN_JOB_MAX_ATTEMPTS` attempts instead of retrying forever.
@@ -360,7 +366,7 @@ src/
 | `src/modules/vulnerability/cvss.spec.ts` | CVSS v3 base scores, severity labels, refusing vectors it cannot score |
 | `src/modules/vulnerability/scan.service.spec.ts` | OSV reconciliation: create, update, resolve, patched rows kept, degraded mode, counters |
 | `src/modules/vulnerability/scan.queue.spec.ts` | Queue claiming under concurrent replicas, orphan recovery, attempt budget, worker shutdown |
-| `src/modules/vulnerability/scan.jobs.spec.ts` | Job listing states, outcomes, filters, paging, access, orphaned jobs |
+| `src/modules/vulnerability/scan.jobs.spec.ts` | Job listing states, outcomes, filters, paging, access, orphaned jobs, retrying failures |
 | `src/modules/vulnerability/scan.scheduler.spec.ts` | Scheduler status, queued sweeps, worker pickup, `force`, hosts without inventory, decommissioned hosts, enqueue route |
 
 The specs run the real entities and queries against an in-memory Postgres: `src/test/pg-shim.ts`
