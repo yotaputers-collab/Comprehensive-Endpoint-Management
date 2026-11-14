@@ -329,14 +329,30 @@ src/
 | --- | --- |
 | `npm run build` | Compile TypeScript to `dist/` |
 | `npm start` | Run the compiled application |
-| `npm test` | Jest (`src/tests` is outside the production build) |
+| `npm test` | Jest specs (`src/**/*.spec.ts`); `src/tests` holds legacy stubs that are excluded |
+
+## Tests
+
+`npm test` runs the committed specs; no database or network access is needed.
+
+| Spec | Covers |
+| --- | --- |
+| `src/modules/vulnerability/cvss.spec.ts` | CVSS v3 base scores, severity labels, refusing vectors it cannot score |
+| `src/modules/vulnerability/scan.service.spec.ts` | OSV reconciliation: create, update, resolve, patched rows kept, degraded mode, counters |
+| `src/modules/vulnerability/scan.queue.spec.ts` | Queue claiming under concurrent replicas, orphan recovery, attempt budget, worker shutdown |
+| `src/modules/vulnerability/scan.scheduler.spec.ts` | Scheduler status, due-host selection, `force`, hosts without inventory, decommissioned hosts |
+
+The specs run the real entities and queries against an in-memory Postgres: `src/test/pg-shim.ts`
+replaces the `pg` package through jest's `moduleNameMapper` (a `require.cache` patch would not work,
+because jest has its own module registry). `src/test/app.ts` boots the application on that database
+and seeds hosts, so specs exercise the same code paths as production without a live server.
 
 ## Known gaps
 
 - Accounts are deactivated, never deleted, so the users table keeps its audit trail.
 - Rate-limit counters are in memory and per process: running more than one replica means each keeps its own budget (use Redis or an ingress limiter to share it).
 - `GET /vulnerabilities/unpatched` and `/vulnerabilities/critical` are shadowed by the earlier `/:id` route; use the `unpatched` query parameter on `/vulnerabilities` instead.
-- The scan loop runs inside the application: with more than one replica each would scan independently, so run a single scanner instance (or move the sweep to a queue) when you scale out.
+- The scheduled sweep still runs per replica: with several replicas each selects its own due hosts, so a host can be swept twice. Queue jobs are claimed atomically, so `POST /scan/enqueue` is safe from any replica; when scaling out, enqueue instead of sweeping directly or run a single scheduler.
 - Coverage stops where OSV stops: Ubuntu, Debian, Alpine and language packages are matched, while RHEL/CentOS/SUSE distro packages are skipped.
 - `/agents/:id/deploy` and `/collect-data` answer `501`: there is no command channel, so nothing can be run on a host.
 - DLP and parts of the compliance layer still return stubbed data, and no `/dlp` routes exist.

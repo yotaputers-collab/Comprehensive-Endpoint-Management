@@ -10,7 +10,12 @@
     "test": "jest",
     "test:watch": "jest --watch"
   },
-  "keywords": ["endpoint-management", "security", "vulnerability", "dlp"],
+  "keywords": [
+    "endpoint-management",
+    "security",
+    "vulnerability",
+    "dlp"
+  ],
   "author": "",
   "license": "ISC",
   "dependencies": {
@@ -37,6 +42,7 @@
     "@types/node": "^20.17.10",
     "@types/supertest": "^6.0.2",
     "jest": "^29.7.0",
+    "pg-mem": "^3.0.14",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.5",
     "typescript": "^5.6.3"
@@ -44,9 +50,27 @@
   "jest": {
     "preset": "ts-jest",
     "testEnvironment": "node",
-    "roots": ["src"],
-    "moduleFileExtensions": ["js", "json", "ts"],
+    "roots": [
+      "<rootDir>"
+    ],
+    "moduleFileExtensions": [
+      "js",
+      "json",
+      "ts"
+    ],
     "rootDir": "src",
-    "testRegex": "spec[.]ts$"
+    "testRegex": "spec[.]ts$",
+    "setupFiles": [
+      "<rootDir>/test/setup-pg-mem.ts"
+    ],
+    "testTimeout": 30000,
+    "testPathIgnorePatterns": [
+      "/node_modules/",
+      "/dist/",
+      "<rootDir>/tests/"
+    ],
+    "moduleNameMapper": {
+      "^pg$": "<rootDir>/test/pg-shim.ts"
+    }
   }
 }
