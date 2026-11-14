@@ -78,7 +78,8 @@ All settings are read from environment variables.
 | `DB_USERNAME` | `postgres` | Database user |
 | `DB_PASSWORD` | `postgres` | Database password |
 | `DB_DATABASE` | `endpoint_management` | Database name |
-| `DB_SYNCHRONIZE` | `true` | Create/update tables from entities on boot |
+| `DB_SYNCHRONIZE` | `false` | Let TypeORM rewrite tables from entities on boot — development only, never on real data |
+| `DB_MIGRATIONS_RUN` | `true` | Apply pending migrations when the application starts |
 | `DB_LOGGING` | `false` | Log every SQL statement |
 | `JWT_SECRET` | `change-this-secret` | Token signing key — **change in production** |
 | `JWT_EXPIRES_IN` | `15m` | Access token lifetime |
@@ -109,7 +110,25 @@ All settings are read from environment variables.
 
 ### Database schema
 
-There are no migrations in this repository. `DB_SYNCHRONIZE=true` lets TypeORM create the tables from the entity definitions on first boot, which is what makes a fresh container work. Once you introduce real data, switch to migrations and set `DB_SYNCHRONIZE=false`.
+The schema is owned by TypeORM migrations in `src/database/migrations`. The application applies anything
+pending on boot (`DB_MIGRATIONS_RUN`), and `synchronize` is off by default: an entity change no longer
+alters a live table by accident, and a schema change is a reviewed file instead of a side effect.
+
+```
+npm run migration:show     # is anything pending?
+npm run migration:run      # apply
+npm run migration:revert   # undo the last one
+```
+
+The scripts build first and then run `dist/database/cli.js`, which reads `.env` (or `ENV_FILE`) and needs no
+extra tools. To add a migration, create `src/database/migrations/<timestamp>-<Name>.ts` exporting a class
+whose name ends with that timestamp, and register it in `src/database/migrations/index.ts` — an unregistered
+migration never runs. Entities are registered the same way, in `src/database/entities.ts`.
+
+Migrating a database that `synchronize` built: the initial migration creates a table only when it is absent,
+so it adopts the existing schema and leaves the rows alone (`IF NOT EXISTS` is avoided deliberately — it
+would hide a table whose definition differs). Columns added after the initial schema are added by later
+migrations that check for themselves, so pointing an older database at this code adds only what is missing.
 
 ## API
 
@@ -371,6 +390,7 @@ src/
 | `src/modules/vulnerability/scan.service.spec.ts` | OSV reconciliation: create, update, resolve, patched rows kept, degraded mode, counters |
 | `src/modules/vulnerability/scan.queue.spec.ts` | Queue claiming under concurrent replicas, orphan recovery, attempt budget, worker shutdown |
 | `src/modules/vulnerability/scan.jobs.spec.ts` | Job listing states, outcomes, filters, paging, access, orphaned jobs, retrying failures |
+| `src/database/migrations/migrations.spec.ts` | Schema creation, re-run idempotency, adopting a synchronize-built database, column repair, revert |
 | `src/modules/vulnerability/scan.scheduler.spec.ts` | Scheduler status, queued sweeps, worker pickup, `force`, hosts without inventory, decommissioned hosts, enqueue route |
 
 The specs run the real entities and queries against an in-memory Postgres: `src/test/pg-shim.ts`

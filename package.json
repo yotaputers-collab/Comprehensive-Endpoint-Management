@@ -8,7 +8,10 @@
     "start": "node dist/main.js",
     "start:prod": "node dist/main.js",
     "test": "jest",
-    "test:watch": "jest --watch"
+    "test:watch": "jest --watch",
+    "migration:run": "npm run build && node dist/database/cli.js run",
+    "migration:revert": "npm run build && node dist/database/cli.js revert",
+    "migration:show": "npm run build && node dist/database/cli.js show"
   },
   "keywords": [
     "endpoint-management",

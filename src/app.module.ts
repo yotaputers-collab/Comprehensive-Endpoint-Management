@@ -5,36 +5,18 @@ import { AgentModule } from './modules/agent/agent.module';
 import { EndpointModule } from './modules/endpoint/endpoint.module';
 import { VulnerabilityModule } from './modules/vulnerability/vulnerability.module';
 import { ScanWorker } from './modules/vulnerability/scan.worker';
-import { ScanJob } from './modules/vulnerability/scan.queue.entity';
 import { ConfigModule } from './config/config.module';
 import { ComplianceModule } from './compliance/compliance.module';
 import { DlpModule } from './dlps/dlps.module';
 import { SocModule } from './soc/soc.module';
 import { AuthModule } from './auth/auth.module';
 import { HealthController } from './health.controller';
-import { Endpoint } from './entities/endpoint.entity';
-import { SoftwarePackage } from './entities/software-package.entity';
-import { Vulnerability } from './entities/vulnerability.entity';
-import { OsvLookup } from './entities/osv-lookup.entity';
-import { DlpPolicy } from './entities/dl-policy.entity';
-import { DlpRule } from './entities/dl-rule.entity';
-import { DlpViolation } from './entities/dl-violation.entity';
-import { User } from './entities/user.entity';
-import { RefreshToken } from './entities/refresh-token.entity';
-import { AuditEvent } from './compliance/audit-event.entity';
+import { databaseOptions } from './database/data-source';
 import { RateLimitMiddleware } from './middleware/rate-limit.middleware';
 
 function buildDatabaseOptions(config: ConfigService): TypeOrmModuleOptions {
   return {
-    type: 'postgres',
-    host: config.get<string>('DB_HOST') ?? 'localhost',
-    port: Number(config.get<string>('DB_PORT') ?? 5432),
-    username: config.get<string>('DB_USERNAME') ?? 'postgres',
-    password: config.get<string>('DB_PASSWORD') ?? 'postgres',
-    database: config.get<string>('DB_DATABASE') ?? 'endpoint_management',
-    entities: [Endpoint, SoftwarePackage, Vulnerability, OsvLookup, ScanJob, AuditEvent, DlpPolicy, DlpRule, DlpViolation, User, RefreshToken],
-    synchronize: (config.get<string>('DB_SYNCHRONIZE') ?? 'true') !== 'false',
-    logging: (config.get<string>('DB_LOGGING') ?? 'false') === 'true',
+    ...databaseOptions((key) => config.get<string>(key)),
     retryAttempts: 10,
     retryDelay: 3000,
   };

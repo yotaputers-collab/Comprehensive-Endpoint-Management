@@ -6,7 +6,10 @@
  * ScanScheduler and ScanService read their settings in their constructors, so a
  * spec that cares about a value must override it before creating the app.
  */
-process.env.DB_SYNCHRONIZE = 'true';
+// Tests boot through the real migrations rather than synchronize, so the
+// migration SQL is exercised by every suite instead of a separate one.
+process.env.DB_SYNCHRONIZE = 'false';
+process.env.DB_MIGRATIONS_RUN = 'true';
 process.env.DB_LOGGING = 'false';
 process.env.JWT_SECRET = 'test-secret';
 process.env.ADMIN_USERNAME = 'admin';
